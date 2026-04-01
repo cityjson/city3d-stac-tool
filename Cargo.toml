@@ -36,7 +36,7 @@ flate2 = "1.0"  # GZIP decompression support
 chrono = { version = "0.4", features = ["serde"] }
 
 # Geometry
-geojson = { version = "0.24", features = ["geo-types"] }
+geojson = { version = "1.0", features = ["geo-types"] }
 geo-types = "0.7"
 
 # Logging
