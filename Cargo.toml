@@ -87,7 +87,7 @@ predicates = "3.1"
 pretty_assertions = "1.4"
 typify = "0.6.1"
 jsonschema = "0.26"
-parquet = { version = "54", features = ["arrow"] }
+parquet = { version = "58", features = ["arrow"] }
 
 
 [features]
