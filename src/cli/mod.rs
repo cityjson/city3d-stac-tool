@@ -1221,11 +1221,6 @@ async fn process_collection_logic(
 
     // Process each file concurrently - write items immediately, accumulate metadata
     let pb = create_progress_bar(sources.len() as u64, "Processing files…");
-    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4),
-    ));
 
     // Shared state for concurrent processing
     let pb_arc = std::sync::Arc::new(pb);
@@ -1250,24 +1245,30 @@ async fn process_collection_logic(
         Fatal(CityJsonStacError),
     }
 
-    let mut handles = Vec::with_capacity(sources.len());
+    let concurrency_limit = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
 
-    for source in sources {
-        let sem = semaphore.clone();
-        let pb = pb_arc.clone();
-        let items_dir = items_dir_arc.clone();
-        let base_url = base_url_arc.clone();
-        let collection_id = collection_id_arc.clone();
-        let crs_override = crs_override_arc.clone();
-        let stem_counts = stem_counts_arc.clone();
-        let skip_errors = config.skip_errors;
-        let pretty = config.pretty;
-        let overwrite_items = config.overwrite_items;
-        let geoparquet = config.geoparquet;
+    // Use buffer_unordered to limit both concurrency and memory usage.
+    // Unlike spawn-all + join_all, this only keeps `concurrency_limit` tasks
+    // in-flight at a time, avoiding OOM for large collections (e.g. 166K+ items).
+    use futures::stream::{self, StreamExt};
 
-        let handle = tokio::spawn(async move {
-            let _permit = sem.acquire_owned().await.unwrap();
+    let skip_errors = config.skip_errors;
+    let pretty = config.pretty;
+    let overwrite_items = config.overwrite_items;
+    let geoparquet = config.geoparquet;
 
+    let mut result_stream = stream::iter(sources)
+        .map(|source| {
+            let pb = pb_arc.clone();
+            let items_dir = items_dir_arc.clone();
+            let base_url = base_url_arc.clone();
+            let collection_id = collection_id_arc.clone();
+            let crs_override = crs_override_arc.clone();
+            let stem_counts = stem_counts_arc.clone();
+
+            async move {
             let source_desc = match &source {
                 InputSource::Local(p) => p.display().to_string(),
                 InputSource::Remote(u) => u.clone(),
@@ -1514,41 +1515,33 @@ async fn process_collection_logic(
                     }
                 }
             }
-        });
+        }
+        })
+        .buffer_unordered(concurrency_limit);
 
-        handles.push(handle);
-    }
-
-    // Collect results from all concurrent tasks
-    let results = futures::future::join_all(handles).await;
-    pb_arc.finish_and_clear();
-
-    for result in results {
+    // Process results as they complete - no need to hold all results in memory
+    while let Some(result) = result_stream.next().await {
         match result {
-            Ok(ItemResult::Success {
+            ItemResult::Success {
                 metadata,
                 item_href,
                 title,
                 stac_item,
-            }) => {
+            } => {
                 if let Some(item) = stac_item {
                     geoparquet_items.push(*item);
                 }
                 accumulator.add_item(metadata, item_href, title);
             }
-            Ok(ItemResult::Error { source, error }) => {
+            ItemResult::Error { source, error } => {
                 accumulator.add_error(source, error);
             }
-            Ok(ItemResult::Fatal(e)) => {
+            ItemResult::Fatal(e) => {
                 return Err(e);
-            }
-            Err(join_err) => {
-                return Err(CityJsonStacError::StacError(format!(
-                    "Task failed: {join_err}"
-                )));
             }
         }
     }
+    pb_arc.finish_and_clear();
 
     // Check if collection file exists and overwrite flag
     let collection_path = config.output.join("collection.json");
