@@ -44,12 +44,18 @@ See [`docs/external-registry.md`](docs/external-registry.md) for a recommended l
 ### From source
 
 ```bash
-git clone https://github.com/HideBa/city3d-stac
-cd city3d-stac
+git clone git@github.com:HideBa/city3d-stac-tool.git
+cd city3d-stac-tool
 cargo build --release
 ```
 
-The binary will be available at `./target/release/c ity3dstac`.
+The binary will be available at `./target/release/city3dstac`.
+
+### With Cargo install
+
+```bash
+cargo install --git ssh://git@github.com/HideBa/city3d-stac-tool.git --bin city3dstac
+```
 
 ## Quick Start
 
