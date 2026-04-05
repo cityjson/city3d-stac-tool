@@ -1,11 +1,13 @@
 //! Accumulator types for streaming collection generation
 //!
 //! These types allow accumulating minimal item metadata during streaming processing,
-//! without keeping full item JSON in memory.
+//! without keeping full item JSON in memory. Aggregates are computed incrementally
+//! so that memory usage is O(1) regardless of item count.
 
-use crate::metadata::AttributeDefinition;
+use crate::metadata::{AttributeDefinition, BBox3D};
 use crate::stac::CityObjectsCount;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::Path;
 
 /// Minimal metadata extracted from a processed item for collection aggregation.
@@ -104,22 +106,130 @@ impl ItemMetadata {
     }
 }
 
+/// Pre-aggregated summaries computed incrementally during item processing.
+/// Memory usage is O(unique_values) not O(item_count).
+#[derive(Debug, Clone, Default)]
+pub struct AggregatedSummaries {
+    pub versions: HashSet<String>,
+    pub lods: HashSet<String>,
+    pub co_types: HashSet<String>,
+    pub proj_codes: HashSet<String>,
+    pub semantic_surfaces: HashSet<bool>,
+    pub textures: HashSet<bool>,
+    pub materials: HashSet<bool>,
+    pub count_min: Option<u64>,
+    pub count_max: Option<u64>,
+    pub count_total: u64,
+    pub merged_bbox: Option<BBox3D>,
+}
+
+impl AggregatedSummaries {
+    /// Incrementally merge metadata from a single item.
+    pub fn merge_item(&mut self, metadata: &ItemMetadata) {
+        if let Some(v) = &metadata.city3d_version {
+            self.versions.insert(v.clone());
+        }
+        if let Some(lods) = &metadata.city3d_lods {
+            for lod in lods {
+                self.lods.insert(lod.clone());
+            }
+        }
+        if let Some(types) = &metadata.city3d_co_types {
+            for t in types {
+                self.co_types.insert(t.clone());
+            }
+        }
+        if let Some(code) = &metadata.proj_code {
+            self.proj_codes.insert(code.clone());
+        }
+        if let Some(v) = metadata.city3d_semantic_surfaces {
+            self.semantic_surfaces.insert(v);
+        }
+        if let Some(v) = metadata.city3d_textures {
+            self.textures.insert(v);
+        }
+        if let Some(v) = metadata.city3d_materials {
+            self.materials.insert(v);
+        }
+
+        // Aggregate city object counts
+        let count = match &metadata.city3d_city_objects {
+            Some(CityObjectsCount::Integer(n)) => Some(*n),
+            Some(CityObjectsCount::Statistics { total, .. }) => Some(*total),
+            None => None,
+        };
+        if let Some(n) = count {
+            self.count_min = Some(self.count_min.map_or(n, |m: u64| m.min(n)));
+            self.count_max = Some(self.count_max.map_or(n, |m: u64| m.max(n)));
+            self.count_total += n;
+        }
+
+        // Merge bbox
+        if let Some(bbox_vec) = &metadata.bbox {
+            let parsed = if bbox_vec.len() == 6 {
+                Some(BBox3D::new(
+                    bbox_vec[0],
+                    bbox_vec[1],
+                    bbox_vec[2],
+                    bbox_vec[3],
+                    bbox_vec[4],
+                    bbox_vec[5],
+                ))
+            } else if bbox_vec.len() >= 4 {
+                Some(BBox3D::new(
+                    bbox_vec[0],
+                    bbox_vec[1],
+                    0.0,
+                    bbox_vec[2],
+                    bbox_vec[3],
+                    0.0,
+                ))
+            } else {
+                None
+            };
+            if let Some(bbox) = parsed {
+                self.merged_bbox = Some(match self.merged_bbox.take() {
+                    Some(existing) => existing.merge(&bbox),
+                    None => bbox,
+                });
+            }
+        }
+    }
+}
+
 /// Accumulates metadata from multiple items for collection generation.
+///
+/// Uses incremental aggregation so that memory usage is bounded by the number of
+/// unique values (versions, LODs, types, etc.) rather than the total item count.
 #[derive(Debug, Clone, Default)]
 pub struct CollectionAccumulator {
-    pub items_metadata: Vec<ItemMetadata>,
+    pub summaries: AggregatedSummaries,
     pub item_links: Vec<(String, Option<String>)>,
     pub errors: Vec<(String, String)>,
+    max_item_links: Option<usize>,
+    omitted_item_links: usize,
+    item_count: usize,
 }
 
 impl CollectionAccumulator {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(max_item_links: Option<usize>) -> Self {
+        Self {
+            max_item_links,
+            ..Self::default()
+        }
     }
 
     pub fn add_item(&mut self, metadata: ItemMetadata, href: String, title: Option<String>) {
-        self.items_metadata.push(metadata);
-        self.item_links.push((href, title));
+        self.summaries.merge_item(&metadata);
+        if self
+            .max_item_links
+            .is_none_or(|limit| self.item_links.len() < limit)
+        {
+            self.item_links.push((href, title));
+        } else {
+            self.omitted_item_links += 1;
+        }
+        self.item_count += 1;
     }
 
     pub fn add_error(&mut self, source: String, error: String) {
@@ -131,11 +241,15 @@ impl CollectionAccumulator {
     }
 
     pub fn successful_count(&self) -> usize {
-        self.items_metadata.len()
+        self.item_count
     }
 
     pub fn error_count(&self) -> usize {
         self.errors.len()
+    }
+
+    pub fn omitted_item_links(&self) -> usize {
+        self.omitted_item_links
     }
 }
 
@@ -208,7 +322,7 @@ mod tests {
 
     #[test]
     fn test_collection_accumulator() {
-        let mut accumulator = CollectionAccumulator::new();
+        let mut accumulator = CollectionAccumulator::new(None);
 
         let item = create_test_item();
         let metadata = ItemMetadata::from_item(&item);
@@ -228,5 +342,59 @@ mod tests {
         assert_eq!(accumulator.successful_count(), 1);
         assert_eq!(accumulator.error_count(), 1);
         assert!(accumulator.has_errors());
+    }
+
+    #[test]
+    fn test_incremental_aggregation() {
+        let mut accumulator = CollectionAccumulator::new(None);
+
+        // Add first item
+        let item1 = create_test_item();
+        let metadata1 = ItemMetadata::from_item(&item1);
+        accumulator.add_item(
+            metadata1,
+            "./items/item1.json".to_string(),
+            Some("item1".to_string()),
+        );
+
+        // Add second item with different values
+        let mut item2 = stac::Item::new("test-item-2");
+        item2.bbox = Some(vec![5.0, 5.0, 5.0, 20.0, 20.0, 20.0].try_into().unwrap());
+        item2.properties.datetime = Some("2023-01-01T00:00:00Z".parse().unwrap());
+        item2.properties.additional_fields.insert(
+            "city3d:version".to_string(),
+            Value::String("2.0".to_string()),
+        );
+        item2
+            .properties
+            .additional_fields
+            .insert("city3d:city_objects".to_string(), Value::Number(100.into()));
+        item2.properties.additional_fields.insert(
+            "city3d:lods".to_string(),
+            Value::Array(vec![Value::String("LOD3".to_string())]),
+        );
+
+        let metadata2 = ItemMetadata::from_item(&item2);
+        accumulator.add_item(
+            metadata2,
+            "./items/item2.json".to_string(),
+            Some("item2".to_string()),
+        );
+
+        assert_eq!(accumulator.successful_count(), 2);
+
+        let summaries = &accumulator.summaries;
+        assert!(summaries.versions.contains("2.0"));
+        assert!(summaries.lods.contains("LOD1"));
+        assert!(summaries.lods.contains("LOD2"));
+        assert!(summaries.lods.contains("LOD3"));
+        assert_eq!(summaries.count_min, Some(42));
+        assert_eq!(summaries.count_max, Some(100));
+        assert_eq!(summaries.count_total, 142);
+
+        // Merged bbox should be union: [0,0,0, 20,20,20]
+        let bbox = summaries.merged_bbox.as_ref().unwrap();
+        assert!((bbox.xmin - 0.0).abs() < f64::EPSILON);
+        assert!((bbox.xmax - 20.0).abs() < f64::EPSILON);
     }
 }

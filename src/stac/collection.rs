@@ -276,89 +276,50 @@ impl StacCollectionBuilder {
         Ok(self)
     }
 
-    /// Aggregate 3D City Models metadata from ItemMetadata (streaming-friendly)
-    pub fn aggregate_from_metadata(
+    /// Aggregate 3D City Models metadata from pre-aggregated summaries (streaming-friendly).
+    ///
+    /// Accepts `AggregatedSummaries` which are computed incrementally during item
+    /// processing, avoiding the need to hold all ItemMetadata in memory at once.
+    pub fn aggregate_from_summaries(
         mut self,
-        items_metadata: &[crate::stac::ItemMetadata],
+        summaries: &crate::stac::AggregatedSummaries,
     ) -> Result<Self> {
-        if !items_metadata.is_empty() {
-            self.has_items = true;
-        }
-        use crate::stac::CityObjectsCount;
+        self.has_items = true;
 
-        // Collect all versions
-        let versions: HashSet<String> = items_metadata
-            .iter()
-            .filter_map(|m| m.city3d_version.clone())
-            .collect();
-        if !versions.is_empty() {
-            let version_vec: Vec<String> = versions.into_iter().collect();
+        if !summaries.versions.is_empty() {
+            let version_vec: Vec<String> = summaries.versions.iter().cloned().collect();
             self.summaries.insert(
                 "city3d:version".to_string(),
                 serde_json::to_value(version_vec)?,
             );
         }
 
-        // Aggregate LODs as strings to avoid floating-point precision issues
-        let all_lods: HashSet<String> = items_metadata
-            .iter()
-            .filter_map(|m| m.city3d_lods.as_ref())
-            .flatten()
-            .cloned()
-            .collect();
-
-        if !all_lods.is_empty() {
-            let mut lods: Vec<String> = all_lods.into_iter().collect();
+        if !summaries.lods.is_empty() {
+            let mut lods: Vec<String> = summaries.lods.iter().cloned().collect();
             lods.sort();
             self.summaries
                 .insert("city3d:lods".to_string(), serde_json::to_value(lods)?);
         }
 
-        // Aggregate city object types
-        let all_types: HashSet<String> = items_metadata
-            .iter()
-            .filter_map(|m| m.city3d_co_types.clone())
-            .flatten()
-            .collect();
-        if !all_types.is_empty() {
-            let mut types: Vec<String> = all_types.into_iter().collect();
+        if !summaries.co_types.is_empty() {
+            let mut types: Vec<String> = summaries.co_types.iter().cloned().collect();
             types.sort();
             self.summaries
                 .insert("city3d:co_types".to_string(), serde_json::to_value(types)?);
         }
 
-        // City object count statistics
-        let counts: Vec<u64> = items_metadata
-            .iter()
-            .filter_map(|m| match &m.city3d_city_objects {
-                Some(CityObjectsCount::Integer(n)) => Some(*n),
-                Some(CityObjectsCount::Statistics { total, .. }) => Some(*total),
-                None => None,
-            })
-            .collect();
-
-        if !counts.is_empty() {
-            let min = *counts.iter().min().unwrap();
-            let max = *counts.iter().max().unwrap();
-            let total: u64 = counts.iter().sum();
-
+        if let (Some(min), Some(max)) = (summaries.count_min, summaries.count_max) {
             let stats = serde_json::json!({
                 "min": min,
                 "max": max,
-                "total": total
+                "total": summaries.count_total
             });
-
             self.summaries
                 .insert("city3d:city_objects".to_string(), stats);
         }
 
-        // Aggregate boolean fields as arrays
-        let semantic_values: HashSet<bool> = items_metadata
-            .iter()
-            .filter_map(|m| m.city3d_semantic_surfaces)
-            .collect();
-        if !semantic_values.is_empty() {
-            let mut vals: Vec<bool> = semantic_values.into_iter().collect();
+        if !summaries.semantic_surfaces.is_empty() {
+            let mut vals: Vec<bool> = summaries.semantic_surfaces.iter().copied().collect();
             vals.sort();
             self.summaries.insert(
                 "city3d:semantic_surfaces".to_string(),
@@ -366,63 +327,29 @@ impl StacCollectionBuilder {
             );
         }
 
-        let texture_values: HashSet<bool> = items_metadata
-            .iter()
-            .filter_map(|m| m.city3d_textures)
-            .collect();
-        if !texture_values.is_empty() {
-            let mut vals: Vec<bool> = texture_values.into_iter().collect();
+        if !summaries.textures.is_empty() {
+            let mut vals: Vec<bool> = summaries.textures.iter().copied().collect();
             vals.sort();
             self.summaries
                 .insert("city3d:textures".to_string(), serde_json::to_value(vals)?);
         }
 
-        let material_values: HashSet<bool> = items_metadata
-            .iter()
-            .filter_map(|m| m.city3d_materials)
-            .collect();
-        if !material_values.is_empty() {
-            let mut vals: Vec<bool> = material_values.into_iter().collect();
+        if !summaries.materials.is_empty() {
+            let mut vals: Vec<bool> = summaries.materials.iter().copied().collect();
             vals.sort();
             self.summaries
                 .insert("city3d:materials".to_string(), serde_json::to_value(vals)?);
         }
 
-        // Aggregate proj:code from items
-        let unique_proj_codes: HashSet<String> = items_metadata
-            .iter()
-            .filter_map(|m| m.proj_code.clone())
-            .collect();
-        if !unique_proj_codes.is_empty() {
-            let mut codes: Vec<String> = unique_proj_codes.into_iter().collect();
+        if !summaries.proj_codes.is_empty() {
+            let mut codes: Vec<String> = summaries.proj_codes.iter().cloned().collect();
             codes.sort();
             self.summaries
                 .insert("proj:code".to_string(), serde_json::to_value(codes)?);
         }
 
-        // Merge spatial extents from item bboxes
-        let parsed_bboxes: Vec<BBox3D> = items_metadata
-            .iter()
-            .filter_map(|m| m.bbox.as_ref())
-            .filter_map(|bbox| {
-                if bbox.len() == 6 {
-                    Some(BBox3D::new(
-                        bbox[0], bbox[1], bbox[2], bbox[3], bbox[4], bbox[5],
-                    ))
-                } else if bbox.len() >= 4 {
-                    Some(BBox3D::new(bbox[0], bbox[1], 0.0, bbox[2], bbox[3], 0.0))
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if !parsed_bboxes.is_empty() {
-            let mut merged = parsed_bboxes[0].clone();
-            for bbox in &parsed_bboxes[1..] {
-                merged = merged.merge(bbox);
-            }
-            self = self.spatial_extent(merged);
+        if let Some(merged) = &summaries.merged_bbox {
+            self = self.spatial_extent(merged.clone());
         }
 
         Ok(self)
