@@ -28,17 +28,34 @@ STAC is the widely-adopted metadata standard for geospatial data, but it lacks n
   - Semantic attribute schemas
   - Coordinate transforms
 
+## Repository Scope
+
+This repository contains the `cityjson-stac` CLI tool and its supporting Rust library code.
+
+Public dataset registry content such as collection config instances, contribution guidelines,
+and publication workflows should live in a separate consumer repository. That consumer
+repository can vendor this tool as a git submodule and invoke the CLI from CI to validate
+and publish STAC catalogs.
+
+See [`docs/external-registry.md`](docs/external-registry.md) for a recommended layout.
+
 ## Installation
 
 ### From source
 
 ```bash
-git clone https://github.com/HideBa/city3d-stac
-cd city3d-stac
+git clone git@github.com:HideBa/city3d-stac-tool.git
+cd city3d-stac-tool
 cargo build --release
 ```
 
-The binary will be available at `./target/release/c ity3dstac`.
+The binary will be available at `./target/release/city3dstac`.
+
+### With Cargo install
+
+```bash
+cargo install --git ssh://git@github.com/HideBa/city3d-stac-tool.git --bin city3dstac
+```
 
 ## Quick Start
 
