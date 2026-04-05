@@ -9,6 +9,20 @@ repository = "https://github.com/cityjson/city3d-stac-tool"
 readme = "README.md"
 keywords = ["stac", "cityjson", "3d", "gis", "geospatial"]
 categories = ["command-line-utilities", "science::geo"]
+exclude = [
+    "tests/data/",
+    ".agent/",
+    ".agents/",
+    ".serena/",
+    ".devcontainer/",
+    ".githooks/",
+    ".github/",
+    "DESIGN_DOC.md",
+    "plan.md",
+    "task.md",
+    "Justfile",
+    "scripts/",
+]
 
 [dependencies]
 # CLI
