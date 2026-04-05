@@ -3,6 +3,7 @@
 //! Extracts ZIP archives and aggregates metadata from all supported files inside.
 
 use crate::error::{CityJsonStacError, Result};
+use crate::memory::{log_memory, memory_log_interval, memory_logging_enabled};
 use crate::metadata::AttributeDefinition;
 use crate::metadata::BBox3D;
 use crate::metadata::CRS;
@@ -19,7 +20,7 @@ pub struct ZipReader {
     temp_dir: TempDir,
     /// Keep temp file alive for remote ZIPs (downloaded files)
     _temp_file: Option<TempPath>,
-    inner_readers: Vec<Box<dyn CityModelMetadataReader>>,
+    inner_paths: Vec<PathBuf>,
     metadata: RwLock<Option<ZipMetadata>>,
 }
 
@@ -54,19 +55,25 @@ impl ZipReader {
 
         // Extract ZIP to temp directory
         Self::extract_zip(file_path, temp_dir.path())?;
+        log_memory(format!("zip-extracted path={}", file_path.display()));
 
         let mut reader = Self {
             file_path: file_path.to_path_buf(),
             temp_dir,
             _temp_file: None,
-            inner_readers: Vec::new(),
+            inner_paths: Vec::new(),
             metadata: RwLock::new(None),
         };
 
-        // Discover and create inner readers
-        reader.inner_readers = reader.discover_inner_readers()?;
+        // Discover supported files inside the extracted ZIP
+        reader.inner_paths = reader.discover_inner_paths()?;
+        log_memory(format!(
+            "zip-discovered path={} inner_files={}",
+            reader.file_path.display(),
+            reader.inner_paths.len()
+        ));
 
-        if reader.inner_readers.is_empty() {
+        if reader.inner_paths.is_empty() {
             return Err(CityJsonStacError::InvalidCityJson(
                 "No CityJSON/CityGML files found in ZIP".to_string(),
             ));
@@ -94,19 +101,25 @@ impl ZipReader {
 
         // Extract ZIP to temp directory
         Self::extract_zip(real_path, temp_dir.path())?;
+        log_memory(format!("zip-extracted path={}", virtual_path.display()));
 
         let mut reader = Self {
             file_path: virtual_path.to_path_buf(),
             temp_dir,
             _temp_file: Some(temp_path),
-            inner_readers: Vec::new(),
+            inner_paths: Vec::new(),
             metadata: RwLock::new(None),
         };
 
-        // Discover and create inner readers
-        reader.inner_readers = reader.discover_inner_readers()?;
+        // Discover supported files inside the extracted ZIP
+        reader.inner_paths = reader.discover_inner_paths()?;
+        log_memory(format!(
+            "zip-discovered path={} inner_files={}",
+            reader.file_path.display(),
+            reader.inner_paths.len()
+        ));
 
-        if reader.inner_readers.is_empty() {
+        if reader.inner_paths.is_empty() {
             return Err(CityJsonStacError::InvalidCityJson(
                 "No CityJSON/CityGML files found in ZIP".to_string(),
             ));
@@ -146,34 +159,36 @@ impl ZipReader {
         Ok(())
     }
 
-    /// Discover all supported files in extracted directory
-    fn discover_inner_readers(&self) -> Result<Vec<Box<dyn CityModelMetadataReader>>> {
-        let mut readers = Vec::new();
+    /// Discover all supported files in the extracted directory.
+    ///
+    /// Keep only paths here so we do not retain one reader per inner file.
+    fn discover_inner_paths(&self) -> Result<Vec<PathBuf>> {
+        let mut paths = Vec::new();
 
         // Walk the extracted directory
-        fn walk_dir(dir: &Path, readers: &mut Vec<Box<dyn CityModelMetadataReader>>) -> Result<()> {
+        fn walk_dir(dir: &Path, paths: &mut Vec<PathBuf>) -> Result<()> {
             for entry in std::fs::read_dir(dir)? {
                 let entry = entry?;
                 let path = entry.path();
 
                 if path.is_dir() {
-                    walk_dir(&path, readers)?;
+                    walk_dir(&path, paths)?;
                 } else {
-                    // Try to create a reader for this file
-                    if let Ok(reader) = get_reader(&path) {
+                    // Only keep paths for supported files; readers are opened on demand later.
+                    if get_reader(&path).is_ok() {
                         log::debug!("Found supported file in ZIP: {:?}", path);
-                        readers.push(reader);
+                        paths.push(path);
                     }
                 }
             }
             Ok(())
         }
 
-        walk_dir(self.temp_dir.path(), &mut readers)?;
-        Ok(readers)
+        walk_dir(self.temp_dir.path(), &mut paths)?;
+        Ok(paths)
     }
 
-    /// Aggregate metadata from all inner readers
+    /// Aggregate metadata from all supported inner files.
     fn aggregate_metadata(&self) -> Result<ZipMetadata> {
         let mut city_object_count = 0;
         let mut city_object_types = BTreeSet::new();
@@ -192,16 +207,22 @@ impl ZipReader {
         let mut max_z = f64::MIN;
         let mut has_bbox = false;
 
-        let primary_encoding = self
-            .inner_readers
-            .first()
-            .map(|r| r.encoding())
-            .unwrap_or("CityJSON");
+        let mut primary_encoding = "CityJSON";
 
         let mut version = String::new();
         let mut crs = None;
+        let memory_log_every = memory_log_interval(100);
 
-        for reader in &self.inner_readers {
+        for (idx, path) in self.inner_paths.iter().enumerate() {
+            let reader = match get_reader(path) {
+                Ok(reader) => reader,
+                Err(_) => continue,
+            };
+
+            if idx == 0 {
+                primary_encoding = reader.encoding();
+            }
+
             // Count city objects
             if let Ok(count) = reader.city_object_count() {
                 city_object_count += count;
@@ -257,7 +278,22 @@ impl ZipReader {
                     crs = Some(c);
                 }
             }
+
+            if memory_logging_enabled() && (idx + 1) % memory_log_every == 0 {
+                log_memory(format!(
+                    "zip-aggregate path={} processed_inner={}/{}",
+                    self.file_path.display(),
+                    idx + 1,
+                    self.inner_paths.len()
+                ));
+            }
         }
+
+        log_memory(format!(
+            "zip-aggregate-finished path={} inner_files={}",
+            self.file_path.display(),
+            self.inner_paths.len()
+        ));
 
         let bbox = if has_bbox {
             Some(BBox3D::new(min_x, min_y, min_z, max_x, max_y, max_z))

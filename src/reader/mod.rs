@@ -20,7 +20,10 @@ pub use zip::ZipReader;
 
 use crate::error::{CityJsonStacError, Result};
 use crate::metadata::{AttributeDefinition, BBox3D, Transform, CRS};
-use crate::remote::{download_from_url, extract_extension_from_url, is_remote_url, url_filename};
+use crate::remote::{
+    download_from_url, download_to_temp_file, extract_extension_from_url, is_remote_url,
+    url_filename,
+};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -108,14 +111,7 @@ pub async fn get_reader_from_source(
                 }
                 "gml" | "xml" => {
                     log::info!("Downloading remote CityGML file: {}", url);
-                    let bytes = download_from_url(url).await?;
-                    // write temporary file to handle it local
-                    let mut temp_file = tempfile::Builder::new()
-                        .suffix(&format!(".{}", extension))
-                        .tempfile()?;
-                    use std::io::Write;
-                    temp_file.write_all(&bytes)?;
-                    let temp_path = temp_file.into_temp_path();
+                    let temp_path = download_to_temp_file(url, &format!(".{}", extension)).await?;
                     let real_path = temp_path.to_path_buf();
                     let reader =
                         CityGMLReader::from_temp_file(&virtual_path, &real_path, temp_path)?;
@@ -123,22 +119,14 @@ pub async fn get_reader_from_source(
                 }
                 "zip" => {
                     log::info!("Downloading remote ZIP file: {}", url);
-                    let bytes = download_from_url(url).await?;
-                    let mut temp_file = tempfile::Builder::new().suffix(".zip").tempfile()?;
-                    use std::io::Write;
-                    temp_file.write_all(&bytes)?;
-                    let temp_path = temp_file.into_temp_path();
+                    let temp_path = download_to_temp_file(url, ".zip").await?;
                     let real_path = temp_path.to_path_buf();
                     let reader = ZipReader::from_temp_file(&virtual_path, &real_path, temp_path)?;
                     Ok(Box::new(reader))
                 }
                 "gz" => {
                     log::info!("Downloading remote GZIP file: {}", url);
-                    let bytes = download_from_url(url).await?;
-                    let mut temp_file = tempfile::Builder::new().suffix(".gz").tempfile()?;
-                    use std::io::Write;
-                    temp_file.write_all(&bytes)?;
-                    let temp_path = temp_file.into_temp_path();
+                    let temp_path = download_to_temp_file(url, ".gz").await?;
                     let real_path = temp_path.to_path_buf();
                     let reader = GzipReader::from_temp_file(&virtual_path, &real_path, temp_path)?;
                     Ok(Box::new(reader))

@@ -8,59 +8,12 @@
 //! - Google Cloud Storage (gs://)
 
 use crate::error::{CityJsonStacError, Result};
+use futures::StreamExt;
 use object_store::DynObjectStore;
+use std::io::Write;
 use std::sync::Arc;
+use tempfile::TempPath;
 use url::Url;
-
-/// Convert S3 HTTPS URLs to s3:// format for object_store
-///
-/// Handles URLs like:
-/// - https://s3.dualstack.us-east-1.amazonaws.com/bucket/key
-/// - https://bucket.s3.amazonaws.com/key
-/// - https://bucket.s3.region.amazonaws.com/key
-fn convert_s3_https_url(url: &str) -> Option<String> {
-    // Match S3 dualstack URLs: https://s3.dualstack.{region}.amazonaws.com/{bucket}/{key}
-    if let Some(rest) = url.strip_prefix("https://s3.dualstack.") {
-        if let Some(region_and_rest) = rest.split_once(".amazonaws.com/") {
-            let (region, path) = region_and_rest;
-            if let Some((bucket, key)) = path.split_once('/') {
-                return Some(format!("s3://{}/{}?region={}", bucket, key, region));
-            }
-        }
-    }
-
-    // Match virtual-hosted style with region: https://{bucket}.s3.{region}.amazonaws.com/{key}
-    // This must be checked before the simpler .s3.amazonaws.com pattern
-    if let Some(rest) = url.strip_prefix("https://") {
-        if let Some((bucket_with_s3, region_and_key)) = rest.split_once(".s3.") {
-            if bucket_with_s3.ends_with(".amazonaws.com") {
-                // This is the path-style, handled below
-            } else if let Some((region, key)) = region_and_key.split_once(".amazonaws.com/") {
-                // https://{bucket}.s3.{region}.amazonaws.com/{key}
-                return Some(format!("s3://{}/{}?region={}", bucket_with_s3, key, region));
-            }
-        }
-    }
-
-    // Match virtual-hosted style without region: https://{bucket}.s3.amazonaws.com/{key}
-    if let Some((bucket, rest)) = url
-        .strip_prefix("https://")
-        .and_then(|s| s.split_once(".s3.amazonaws.com/"))
-    {
-        return Some(format!("s3://{}/{}", bucket, rest));
-    }
-
-    // Match path-style: https://s3.{region}.amazonaws.com/{bucket}/{key}
-    if let Some(rest) = url.strip_prefix("https://s3.") {
-        if let Some((region, path)) = rest.split_once(".amazonaws.com/") {
-            if let Some((bucket, key)) = path.split_once('/') {
-                return Some(format!("s3://{}/{}?region={}", bucket, key, region));
-            }
-        }
-    }
-
-    None
-}
 
 /// Create an object store from a URL string
 ///
@@ -111,21 +64,12 @@ pub async fn create_store_from_url(
 /// # Errors
 /// Returns error if URL parsing fails, store creation fails, or download fails
 pub async fn download_from_url(url: &str) -> Result<bytes::Bytes> {
-    // Try to convert S3 HTTPS URLs to s3:// format
-    let converted_url = convert_s3_https_url(url);
-    let url_to_use = converted_url.as_deref().unwrap_or(url);
-
-    let parsed_url = Url::parse(url_to_use).map_err(CityJsonStacError::UrlError)?;
+    let parsed_url = Url::parse(url).map_err(CityJsonStacError::UrlError)?;
 
     match parsed_url.scheme() {
         // For cloud storage schemes, use object_store with native protocol support
         "s3" | "gs" | "az" | "azure" => {
-            let options: Vec<(String, String)> = if converted_url.is_some() {
-                vec![("aws_skip_signature".to_string(), "true".to_string())]
-            } else {
-                Vec::new()
-            };
-
+            let options: Vec<(String, String)> = Vec::new();
             let (store, path) =
                 object_store::parse_url_opts(&parsed_url, options).map_err(|e| {
                     CityJsonStacError::StorageError(format!("Failed to create object store: {e}"))
@@ -138,9 +82,18 @@ pub async fn download_from_url(url: &str) -> Result<bytes::Bytes> {
         // For HTTP/HTTPS, use reqwest directly to avoid object_store's strict
         // header requirements (e.g. Content-Length) that some servers don't provide
         "http" | "https" => {
-            let response = reqwest::get(url_to_use).await.map_err(|e| {
-                CityJsonStacError::StorageError(format!("HTTP request failed: {e}"))
+            let client = reqwest::Client::builder().build().map_err(|e| {
+                CityJsonStacError::StorageError(format!("Failed to create HTTP client: {e}"))
             })?;
+            let response = client
+                .get(url)
+                // Some open-data servers advertise compression but serve malformed bodies.
+                .header(reqwest::header::ACCEPT_ENCODING, "identity")
+                .send()
+                .await
+                .map_err(|e| {
+                    CityJsonStacError::StorageError(format!("HTTP request failed: {e}"))
+                })?;
 
             if !response.status().is_success() {
                 return Err(CityJsonStacError::StorageError(format!(
@@ -159,6 +112,53 @@ pub async fn download_from_url(url: &str) -> Result<bytes::Bytes> {
             "Unsupported URL scheme: {scheme}"
         ))),
     }
+}
+
+/// Stream a remote URL into a temporary file.
+///
+/// This avoids buffering large remote assets such as ZIP and CityGML files fully
+/// in memory before handing them to file-based readers.
+pub async fn download_to_temp_file(url: &str, suffix: &str) -> Result<TempPath> {
+    let parsed_url = Url::parse(url).map_err(CityJsonStacError::UrlError)?;
+    let mut temp_file = tempfile::Builder::new().suffix(suffix).tempfile()?;
+
+    match parsed_url.scheme() {
+        "http" | "https" => {
+            let client = reqwest::Client::builder().build().map_err(|e| {
+                CityJsonStacError::StorageError(format!("Failed to create HTTP client: {e}"))
+            })?;
+            let response = client
+                .get(url)
+                .header(reqwest::header::ACCEPT_ENCODING, "identity")
+                .send()
+                .await
+                .map_err(|e| {
+                    CityJsonStacError::StorageError(format!("HTTP request failed: {e}"))
+                })?;
+
+            if !response.status().is_success() {
+                return Err(CityJsonStacError::StorageError(format!(
+                    "HTTP {} for {}",
+                    response.status(),
+                    url
+                )));
+            }
+
+            let mut stream = response.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|e| {
+                    CityJsonStacError::StorageError(format!("Failed to read response body: {e}"))
+                })?;
+                temp_file.write_all(&chunk)?;
+            }
+        }
+        _ => {
+            let bytes = download_from_url(url).await?;
+            temp_file.write_all(&bytes)?;
+        }
+    }
+
+    Ok(temp_file.into_temp_path())
 }
 
 /// Extract file extension from URL or path
@@ -271,39 +271,6 @@ pub fn url_filename(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_convert_s3_dualstack_url() {
-        let url = "https://s3.dualstack.us-east-1.amazonaws.com/mybucket/path/to/file.json";
-        let converted = convert_s3_https_url(url).unwrap();
-        assert_eq!(
-            converted,
-            "s3://mybucket/path/to/file.json?region=us-east-1"
-        );
-    }
-
-    #[test]
-    fn test_convert_s3_virtual_hosted_url() {
-        let url = "https://mybucket.s3.amazonaws.com/path/to/file.json";
-        let converted = convert_s3_https_url(url).unwrap();
-        assert_eq!(converted, "s3://mybucket/path/to/file.json");
-    }
-
-    #[test]
-    fn test_convert_s3_virtual_hosted_with_region() {
-        let url = "https://mybucket.s3.eu-west-1.amazonaws.com/path/to/file.json";
-        let converted = convert_s3_https_url(url).unwrap();
-        assert_eq!(
-            converted,
-            "s3://mybucket/path/to/file.json?region=eu-west-1"
-        );
-    }
-
-    #[test]
-    fn test_convert_non_s3_url() {
-        let url = "https://example.com/file.json";
-        assert!(convert_s3_https_url(url).is_none());
-    }
 
     #[test]
     fn test_extract_extension_from_url() {

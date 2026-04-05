@@ -11,7 +11,7 @@ pub mod geoparquet;
 mod item;
 mod models;
 
-pub use accumulator::{CollectionAccumulator, ItemMetadata};
+pub use accumulator::{AggregatedSummaries, CollectionAccumulator, ItemMetadata};
 pub use catalog::StacCatalogBuilder;
 pub use collection::StacCollectionBuilder;
 pub use item::StacItemBuilder;
