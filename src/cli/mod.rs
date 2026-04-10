@@ -164,8 +164,13 @@ enum Commands {
     #[command(visible_alias = "aggregate")]
     UpdateCollection {
         /// STAC item JSON files to aggregate
-        #[arg(required = true)]
+        #[arg(required_unless_present = "items_from_file")]
         items: Vec<PathBuf>,
+
+        /// Read item file paths from a text file (one path per line).
+        /// Use this when the number of items exceeds shell argument limits.
+        #[arg(long)]
+        items_from_file: Option<PathBuf>,
 
         /// Output file path for the collection (collection.json)
         #[arg(short, long, default_value = "./collection.json")]
@@ -211,6 +216,47 @@ enum Commands {
         /// Maximum number of per-item links to include in collection.json (`0` disables them)
         #[arg(long)]
         max_item_links: Option<usize>,
+    },
+
+    /// Generate STAC Catalog from existing collection.json files
+    ///
+    /// This command builds a catalog.json from pre-existing collection.json files
+    /// without re-generating items or collections. Useful when collections have
+    /// already been generated (e.g., via `update-collection`) and you just need
+    /// to assemble the root catalog.
+    #[command(visible_alias = "aggregate-catalog")]
+    UpdateCatalog {
+        /// Paths to collection.json files or directories containing them
+        #[arg(num_args = 0..)]
+        inputs: Vec<PathBuf>,
+
+        /// Output directory for the catalog
+        #[arg(short, long, default_value = "./catalog")]
+        output: PathBuf,
+
+        /// YAML/TOML configuration file for catalog metadata
+        #[arg(short = 'C', long)]
+        config: Option<PathBuf>,
+
+        /// Catalog ID (defaults to output directory name)
+        #[arg(long)]
+        id: Option<String>,
+
+        /// Catalog title
+        #[arg(long)]
+        title: Option<String>,
+
+        /// Catalog description
+        #[arg(short, long)]
+        description: Option<String>,
+
+        /// Base URL for catalog child links
+        #[arg(long)]
+        base_url: Option<String>,
+
+        /// Pretty-print JSON
+        #[arg(long, default_value_t = true)]
+        pretty: bool,
     },
 
     /// Generate STAC Catalog from multiple directories/collections
@@ -388,6 +434,7 @@ pub async fn run() -> Result<()> {
 
         Commands::UpdateCollection {
             items,
+            items_from_file,
             output,
             config,
             id,
@@ -399,21 +446,57 @@ pub async fn run() -> Result<()> {
             pretty,
             geoparquet,
             max_item_links,
-        } => handle_update_collection_command(UpdateCollectionConfig {
-            items,
+        } => {
+            let mut all_items = items;
+            if let Some(list_path) = items_from_file {
+                let content = std::fs::read_to_string(&list_path).map_err(|e| {
+                    CityJsonStacError::IoError(e)
+                })?;
+                for line in content.lines() {
+                    let line = line.trim();
+                    if !line.is_empty() {
+                        all_items.push(PathBuf::from(line));
+                    }
+                }
+            }
+            handle_update_collection_command(UpdateCollectionConfig {
+                items: all_items,
+                output,
+                config,
+                id,
+                title,
+                description,
+                license,
+                items_base_url,
+                skip_errors,
+                pretty,
+                dry_run: cli.dry_run,
+                geoparquet,
+                max_item_links,
+            })
+        }
+
+        Commands::UpdateCatalog {
+            inputs,
             output,
             config,
             id,
             title,
             description,
-            license,
-            items_base_url,
-            skip_errors,
+            base_url,
             pretty,
-            dry_run: cli.dry_run,
-            geoparquet,
-            max_item_links,
-        }),
+        } => {
+            handle_update_catalog_command(UpdateCatalogConfig {
+                inputs,
+                output,
+                config,
+                id,
+                title,
+                description,
+                base_url,
+                pretty,
+            })
+        }
 
         Commands::Catalog {
             inputs,
@@ -601,6 +684,263 @@ struct CatalogConfig {
     geoparquet: bool,
     concurrency: Option<usize>,
     max_item_links: Option<usize>,
+}
+
+struct UpdateCatalogConfig {
+    inputs: Vec<PathBuf>,
+    output: PathBuf,
+    config: Option<PathBuf>,
+    id: Option<String>,
+    title: Option<String>,
+    description: Option<String>,
+    base_url: Option<String>,
+    pretty: bool,
+}
+
+fn handle_update_catalog_command(config: UpdateCatalogConfig) -> Result<()> {
+    use crate::config::{CatalogCliArgs, CatalogConfigFile};
+    use crate::stac::StacCatalogBuilder;
+
+    // Load config file if provided
+    let base_config = if let Some(config_path) = &config.config {
+        CatalogConfigFile::from_file(config_path)?
+    } else {
+        CatalogConfigFile::default()
+    };
+
+    // Merge with CLI args
+    let merged_config = base_config.merge_with_cli(&CatalogCliArgs {
+        id: config.id.clone(),
+        title: config.title.clone(),
+        description: config.description.clone(),
+        base_url: config.base_url.clone(),
+    });
+
+    // Collect collection.json paths from inputs + config
+    let mut collection_paths: Vec<PathBuf> = Vec::new();
+
+    for input in &config.inputs {
+        if input.is_file() {
+            collection_paths.push(input.clone());
+        } else if input.is_dir() {
+            let candidate = input.join("collection.json");
+            if candidate.exists() {
+                collection_paths.push(candidate);
+            } else {
+                print_warning(format!(
+                    "No collection.json found in {}",
+                    input.display()
+                ));
+            }
+        } else {
+            print_warning(format!("Path not found: {}", input.display()));
+        }
+    }
+
+    // Process config collections
+    if let Some(config_collections) = &merged_config.collections {
+        let base_dir = config
+            .config
+            .as_ref()
+            .and_then(|p| p.parent())
+            .unwrap_or_else(|| std::path::Path::new("."));
+
+        for coll_path_str in config_collections {
+            let path = base_dir.join(coll_path_str);
+            if path.is_file() {
+                collection_paths.push(path);
+            } else if path.is_dir() {
+                let candidate = path.join("collection.json");
+                if candidate.exists() {
+                    collection_paths.push(candidate);
+                } else {
+                    print_warning(format!(
+                        "No collection.json found in {}",
+                        path.display()
+                    ));
+                }
+            } else {
+                print_warning(format!("Path not found: {}", path.display()));
+            }
+        }
+    }
+
+    if collection_paths.is_empty() {
+        print_error("No collection.json files found. Provide paths to collection.json files or directories containing them.");
+        std::process::exit(1);
+    }
+
+    print_info(format!(
+        "Reading {} existing collection(s)",
+        collection_paths.len()
+    ));
+
+    // Read each collection.json and extract id + title
+    let mut generated_collections: Vec<(String, String)> = Vec::new(); // (href, title)
+    let mut errors: u64 = 0;
+
+    // Create output directory
+    std::fs::create_dir_all(&config.output)?;
+
+    for coll_path in &collection_paths {
+        let content = match std::fs::read_to_string(coll_path) {
+            Ok(c) => c,
+            Err(e) => {
+                print_warning(format!(
+                    "Failed to read {}: {}",
+                    coll_path.display(),
+                    e
+                ));
+                errors += 1;
+                continue;
+            }
+        };
+
+        let mut collection: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(e) => {
+                print_warning(format!(
+                    "Failed to parse {}: {}",
+                    coll_path.display(),
+                    e
+                ));
+                errors += 1;
+                continue;
+            }
+        };
+
+        let col_id = collection
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let col_title = collection
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&col_id)
+            .to_string();
+
+        // Update parent and root links in the collection
+        if let Some(links) = collection.get_mut("links").and_then(|v| v.as_array_mut()) {
+            // Remove existing parent and root links
+            links.retain(|link| {
+                let rel = link.get("rel").and_then(|v| v.as_str()).unwrap_or("");
+                rel != "parent" && rel != "root"
+            });
+
+            // Compute relative path from collection.json to catalog.json
+            let catalog_rel_href = if let Some(base) = &config.base_url {
+                let normalized = if base.ends_with('/') {
+                    base.to_string()
+                } else {
+                    format!("{base}/")
+                };
+                format!("{normalized}catalog.json")
+            } else {
+                // Collections are typically one directory below the catalog
+                "../catalog.json".to_string()
+            };
+
+            links.push(serde_json::json!({
+                "rel": "parent",
+                "href": catalog_rel_href,
+                "type": "application/json"
+            }));
+            links.push(serde_json::json!({
+                "rel": "root",
+                "href": catalog_rel_href,
+                "type": "application/json"
+            }));
+        }
+
+        // Write back the updated collection.json
+        let updated_json = if config.pretty {
+            serde_json::to_string_pretty(&collection)?
+        } else {
+            serde_json::to_string(&collection)?
+        };
+        std::fs::write(coll_path, updated_json)?;
+
+        // Compute href relative to catalog output directory
+        let href = if let Some(base) = &config.base_url {
+            let normalized_base = if base.ends_with('/') {
+                base.to_string()
+            } else {
+                format!("{base}/")
+            };
+            format!("{normalized_base}{col_id}/collection.json")
+        } else if let Ok(rel) = coll_path.strip_prefix(&config.output) {
+            format!("./{}", rel.display())
+        } else if let Ok(abs_coll) = coll_path.canonicalize() {
+            if let Ok(abs_out) = config.output.canonicalize() {
+                if let Ok(rel) = abs_coll.strip_prefix(&abs_out) {
+                    format!("./{}", rel.display())
+                } else {
+                    format!("./{col_id}/collection.json")
+                }
+            } else {
+                format!("./{col_id}/collection.json")
+            }
+        } else {
+            format!("./{col_id}/collection.json")
+        };
+
+        println!(
+            "  {} {}",
+            console::style("✓").green(),
+            col_title
+        );
+        generated_collections.push((href, col_title));
+    }
+
+    // Build catalog
+    let catalog_id = merged_config.id.unwrap_or_else(|| {
+        config
+            .output
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("catalog")
+            .to_string()
+    });
+
+    let description = merged_config
+        .description
+        .unwrap_or_else(|| "Root catalog".to_string());
+
+    let mut catalog_builder = StacCatalogBuilder::new(catalog_id, description);
+
+    if let Some(t) = merged_config.title {
+        catalog_builder = catalog_builder.title(t);
+    }
+
+    let collection_count = generated_collections.len();
+    for (href, title) in generated_collections {
+        catalog_builder = catalog_builder.child_link(href, Some(title));
+    }
+
+    catalog_builder = catalog_builder
+        .self_link("./catalog.json")
+        .root_link("./catalog.json");
+
+    let catalog = catalog_builder.build();
+    let catalog_json = if config.pretty {
+        serde_json::to_string_pretty(&catalog)?
+    } else {
+        serde_json::to_string(&catalog)?
+    };
+
+    let catalog_path = config.output.join("catalog.json");
+    std::fs::write(&catalog_path, &catalog_json)?;
+
+    Summary::new()
+        .add("Catalog", catalog_path.display().to_string())
+        .add("Collections", format!("{collection_count}"))
+        .add("Errors", format!("{errors}"))
+        .print();
+    print_success("Catalog generated successfully");
+
+    Ok(())
 }
 
 /// Sanitize a string for use as a folder name by replacing invalid characters with underscores
