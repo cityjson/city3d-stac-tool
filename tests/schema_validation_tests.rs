@@ -71,9 +71,10 @@ fn test_data_path(filename: &str) -> PathBuf {
 /// Build a STAC Item from a file and return it as serde_json::Value
 fn build_item_from_file(filename: &str) -> Value {
     let path = test_data_path(filename);
-    let reader = get_reader(&path).expect(&format!("Failed to create reader for {filename}"));
+    let reader =
+        get_reader(&path).unwrap_or_else(|_| panic!("Failed to create reader for {filename}"));
     let builder = StacItemBuilder::from_file(&path, reader.as_ref(), None, None)
-        .expect(&format!("Failed to build item for {filename}"));
+        .unwrap_or_else(|_| panic!("Failed to build item for {filename}"));
     let item = builder.build().expect("Failed to build STAC Item");
     serde_json::to_value(item).expect("Failed to serialize STAC Item")
 }
@@ -419,7 +420,7 @@ mod collection_core_schema_tests {
     use super::*;
 
     fn build_test_collection() -> Value {
-        let files = vec![
+        let files = [
             "delft.city.json",
             "railway.city.json",
             "delft.city.jsonl",
@@ -428,7 +429,9 @@ mod collection_core_schema_tests {
 
         let readers: Vec<Box<dyn CityModelMetadataReader>> = files
             .iter()
-            .map(|f| get_reader(&test_data_path(f)).expect(&format!("Failed to read {f}")))
+            .map(|f| {
+                get_reader(&test_data_path(f)).unwrap_or_else(|_| panic!("Failed to read {f}"))
+            })
             .collect();
 
         build_collection_from_readers(&readers, "test-collection")
@@ -660,7 +663,7 @@ mod aggregate_collection_schema_tests {
     #[test]
     fn test_aggregate_collection_validates_against_schemas() {
         // First, generate STAC Items from all test files
-        let files = vec![
+        let files = [
             "delft.city.json",
             "railway.city.json",
             "delft.city.jsonl",
@@ -671,9 +674,9 @@ mod aggregate_collection_schema_tests {
             .iter()
             .map(|f| {
                 let path = test_data_path(f);
-                let reader = get_reader(&path).expect(&format!("Failed to read {f}"));
+                let reader = get_reader(&path).unwrap_or_else(|_| panic!("Failed to read {f}"));
                 let builder = StacItemBuilder::from_file(&path, reader.as_ref(), None, None)
-                    .expect(&format!("Failed to build item for {f}"));
+                    .unwrap_or_else(|_| panic!("Failed to build item for {f}"));
                 builder.build().expect("Failed to build STAC Item")
             })
             .collect();

@@ -449,9 +449,8 @@ pub async fn run() -> Result<()> {
         } => {
             let mut all_items = items;
             if let Some(list_path) = items_from_file {
-                let content = std::fs::read_to_string(&list_path).map_err(|e| {
-                    CityJsonStacError::IoError(e)
-                })?;
+                let content =
+                    std::fs::read_to_string(&list_path).map_err(CityJsonStacError::IoError)?;
                 for line in content.lines() {
                     let line = line.trim();
                     if !line.is_empty() {
@@ -485,18 +484,16 @@ pub async fn run() -> Result<()> {
             description,
             base_url,
             pretty,
-        } => {
-            handle_update_catalog_command(UpdateCatalogConfig {
-                inputs,
-                output,
-                config,
-                id,
-                title,
-                description,
-                base_url,
-                pretty,
-            })
-        }
+        } => handle_update_catalog_command(UpdateCatalogConfig {
+            inputs,
+            output,
+            config,
+            id,
+            title,
+            description,
+            base_url,
+            pretty,
+        }),
 
         Commands::Catalog {
             inputs,
@@ -727,10 +724,7 @@ fn handle_update_catalog_command(config: UpdateCatalogConfig) -> Result<()> {
             if candidate.exists() {
                 collection_paths.push(candidate);
             } else {
-                print_warning(format!(
-                    "No collection.json found in {}",
-                    input.display()
-                ));
+                print_warning(format!("No collection.json found in {}", input.display()));
             }
         } else {
             print_warning(format!("Path not found: {}", input.display()));
@@ -754,10 +748,7 @@ fn handle_update_catalog_command(config: UpdateCatalogConfig) -> Result<()> {
                 if candidate.exists() {
                     collection_paths.push(candidate);
                 } else {
-                    print_warning(format!(
-                        "No collection.json found in {}",
-                        path.display()
-                    ));
+                    print_warning(format!("No collection.json found in {}", path.display()));
                 }
             } else {
                 print_warning(format!("Path not found: {}", path.display()));
@@ -786,11 +777,7 @@ fn handle_update_catalog_command(config: UpdateCatalogConfig) -> Result<()> {
         let content = match std::fs::read_to_string(coll_path) {
             Ok(c) => c,
             Err(e) => {
-                print_warning(format!(
-                    "Failed to read {}: {}",
-                    coll_path.display(),
-                    e
-                ));
+                print_warning(format!("Failed to read {}: {}", coll_path.display(), e));
                 errors += 1;
                 continue;
             }
@@ -799,11 +786,7 @@ fn handle_update_catalog_command(config: UpdateCatalogConfig) -> Result<()> {
         let mut collection: serde_json::Value = match serde_json::from_str(&content) {
             Ok(v) => v,
             Err(e) => {
-                print_warning(format!(
-                    "Failed to parse {}: {}",
-                    coll_path.display(),
-                    e
-                ));
+                print_warning(format!("Failed to parse {}: {}", coll_path.display(), e));
                 errors += 1;
                 continue;
             }
@@ -886,11 +869,7 @@ fn handle_update_catalog_command(config: UpdateCatalogConfig) -> Result<()> {
             format!("./{col_id}/collection.json")
         };
 
-        println!(
-            "  {} {}",
-            console::style("✓").green(),
-            col_title
-        );
+        println!("  {} {}", console::style("✓").green(), col_title);
         generated_collections.push((href, col_title));
     }
 
@@ -1889,7 +1868,9 @@ async fn process_collection_logic(
             } => {
                 accumulator.add_item(metadata, item_href, title);
                 if memory_logging_enabled()
-                    && accumulator.successful_count() % memory_log_every == 0
+                    && accumulator
+                        .successful_count()
+                        .is_multiple_of(memory_log_every)
                 {
                     log_memory(format!(
                         "collection-progress processed={} errors={}",
@@ -1900,7 +1881,9 @@ async fn process_collection_logic(
             }
             ItemResult::Error { source, error } => {
                 accumulator.add_error(source, error);
-                if memory_logging_enabled() && accumulator.error_count() % memory_log_every == 0 {
+                if memory_logging_enabled()
+                    && accumulator.error_count().is_multiple_of(memory_log_every)
+                {
                     log_memory(format!(
                         "collection-errors processed={} errors={}",
                         accumulator.successful_count(),

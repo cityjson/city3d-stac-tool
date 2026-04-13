@@ -333,7 +333,7 @@ fn test_config_with_inputs_from_file() {
     writeln!(urls_file, "https://example.com/file1.json").unwrap();
     writeln!(urls_file, "https://example.com/file2.json").unwrap();
     writeln!(urls_file, "# This is a comment").unwrap();
-    writeln!(urls_file, "").unwrap(); // Empty line
+    writeln!(urls_file).unwrap(); // Empty line
     writeln!(urls_file, "https://example.com/file3.json").unwrap();
     urls_file.flush().unwrap();
 

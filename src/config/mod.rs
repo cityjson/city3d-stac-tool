@@ -441,7 +441,7 @@ mod tests {
         writeln!(temp_file, "url1.json").unwrap();
         writeln!(temp_file, "url2.json").unwrap();
         writeln!(temp_file, "# comment").unwrap();
-        writeln!(temp_file, "").unwrap(); // empty line
+        writeln!(temp_file).unwrap(); // empty line
         writeln!(temp_file, "url3.json").unwrap();
         temp_file.flush().unwrap();
 
