@@ -168,7 +168,13 @@ impl CityGMLReader {
                     depth += 1;
 
                     // Detect CityGML version from root element namespace
-                    if name == b"CityModel" {
+                    // Handle both unprefixed `CityModel` and prefixed `core:CityModel`
+                    let is_city_model = if let Ok(local_name) = std::str::from_utf8(name) {
+                        local_name.split(':').next_back() == Some("CityModel")
+                    } else {
+                        false
+                    };
+                    if is_city_model {
                         for attr in e.attributes().flatten() {
                             let key = attr.key.as_ref();
                             if key == b"xmlns" || key.starts_with(b"xmlns:") {
@@ -198,8 +204,12 @@ impl CityGMLReader {
                     }
 
                     // Detect city object members (count and type)
-                    if name == b"cityObjectMember" {
-                        metadata.city_object_count += 1;
+                    // Handle both unprefixed `cityObjectMember` and prefixed
+                    // forms like `core:cityObjectMember`
+                    if let Ok(local_name) = std::str::from_utf8(name) {
+                        if local_name.split(':').next_back() == Some("cityObjectMember") {
+                            metadata.city_object_count += 1;
+                        }
                     }
 
                     // Detect object types (Building, Road, etc.)

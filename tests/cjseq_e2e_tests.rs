@@ -44,8 +44,8 @@ fn test_cjseq_item_generation() {
     });
 
     let mut file = std::fs::File::create(&input_path).expect("Failed to create input file");
-    writeln!(file, "{}", header_obj.to_string()).expect("Failed to write header");
-    writeln!(file, "{}", feature_obj.to_string()).expect("Failed to write feature");
+    writeln!(file, "{}", header_obj).expect("Failed to write header");
+    writeln!(file, "{}", feature_obj).expect("Failed to write feature");
 
     // Run CLI
     let mut cmd = Command::cargo_bin("city3dstac").unwrap();
