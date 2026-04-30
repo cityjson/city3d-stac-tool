@@ -140,13 +140,25 @@ impl BBox3D {
                 CityJsonStacError::Other(format!("Failed to create WGS84 projection: {e}"))
             })?;
 
-        // Transform the 4 corners of the 2D bounding box
-        let corners: [(f64, f64); 4] = [
-            (self.xmin, self.ymin),
-            (self.xmax, self.ymin),
-            (self.xmax, self.ymax),
-            (self.xmin, self.ymax),
-        ];
+        // Transform the 4 corners of the 2D bounding box.
+        // Some projected CRS define their first axis as northing, not easting (per
+        // EPSG axis order metadata). proj4rs always treats projection inputs as
+        // (easting, northing), so swap before projecting for those CRS.
+        let corners: [(f64, f64); 4] = if is_northing_first_projected(horizontal_epsg) {
+            [
+                (self.ymin, self.xmin),
+                (self.ymax, self.xmin),
+                (self.ymax, self.xmax),
+                (self.ymin, self.xmax),
+            ]
+        } else {
+            [
+                (self.xmin, self.ymin),
+                (self.xmax, self.ymin),
+                (self.xmax, self.ymax),
+                (self.xmin, self.ymax),
+            ]
+        };
 
         let mut lons = Vec::with_capacity(4);
         let mut lats = Vec::with_capacity(4);
@@ -185,6 +197,20 @@ fn is_wgs84_equivalent_geographic(epsg: u32) -> bool {
         4326  // WGS84 geographic 2D
         | 4979 // WGS84 geographic 3D (with ellipsoidal height)
         | 6668 // JGD2011 geographic 2D (GRS80 ellipsoid)
+    )
+}
+
+/// Projected CRS whose first axis is northing per EPSG axis order metadata.
+///
+/// proj4rs (like proj4 by default) treats projection inputs as (easting, northing)
+/// regardless of the EPSG-declared axis order. CityGML files written against such
+/// a CRS use the EPSG-declared order, so coordinates land in the wrong axis when
+/// fed straight to proj4rs. Callers must swap (x, y) before projecting from these.
+fn is_northing_first_projected(epsg: u32) -> bool {
+    matches!(
+        epsg,
+        // Estonian Coordinate System of 1997 (axis order: northing, easting)
+        3301
     )
 }
 
@@ -381,6 +407,34 @@ mod tests {
         assert_eq!(resolve_horizontal_epsg(6697), 6668); // JGD2011 3D → 2D
         assert_eq!(resolve_horizontal_epsg(28992), 28992); // Not compound, returned as-is
         assert_eq!(resolve_horizontal_epsg(4326), 4326); // WGS84, returned as-is
+    }
+
+    #[test]
+    fn test_to_wgs84_from_estonia_lest97() {
+        // EPSG:3301 (Estonian Coordinate System of 1997) defines its first axis as
+        // northing, second as easting. CityGML files for Estonia therefore write
+        // gml:lowerCorner / gml:upperCorner as (N, E, Z). Without an axis swap,
+        // proj4rs reads them as (E, N) and the projected point lands somewhere
+        // off the Equator instead of in Estonia.
+        let bbox = BBox3D::new(6558873.64, 566634.87, 35.74, 6586043.39, 601703.81, 101.21);
+        let crs = CRS::from_epsg(3301);
+        let result = bbox.to_wgs84(&crs).unwrap();
+        // Anija parish is roughly (24.7°E .. 25.4°E, 59.1°N .. 59.4°N).
+        assert!(
+            result.xmin > 24.0 && result.xmax < 26.0,
+            "lon should be in 24..26, got [{}, {}]",
+            result.xmin,
+            result.xmax
+        );
+        assert!(
+            result.ymin > 58.5 && result.ymax < 60.0,
+            "lat should be in 58.5..60, got [{}, {}]",
+            result.ymin,
+            result.ymax
+        );
+        assert_eq!(result.zmin, 35.74);
+        assert_eq!(result.zmax, 101.21);
+        assert!(result.is_valid());
     }
 
     #[test]

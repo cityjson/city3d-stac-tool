@@ -2039,9 +2039,22 @@ async fn process_collection_logic(
                 ));
             };
 
-            // Transform to WGS84 if CRS is provided
-            let crs = crs_override.clone().unwrap_or_default();
-            let wgs84_bbox = bbox3d.to_wgs84(&crs)?;
+            // STAC requires the collection bbox to be in WGS84 (per RFC 7946).
+            // If the values are already in WGS84 valid range, treat them as WGS84 —
+            // real projected coordinates (UTM eastings, Lambert false-easting offsets,
+            // state-plane feet, etc.) are far outside [-180, 180] x [-90, 90], so a
+            // bbox in that range is almost certainly already in WGS84 even when
+            // `extent.spatial.crs` names a projected native CRS for items.
+            let in_wgs84_range = bbox3d.xmin >= -180.0
+                && bbox3d.xmax <= 180.0
+                && bbox3d.ymin >= -90.0
+                && bbox3d.ymax <= 90.0;
+            let wgs84_bbox = if in_wgs84_range {
+                bbox3d
+            } else {
+                let crs = crs_override.clone().unwrap_or_default();
+                bbox3d.to_wgs84(&crs)?
+            };
             collection_builder = collection_builder.spatial_extent(wgs84_bbox);
         }
     }
