@@ -1910,8 +1910,33 @@ async fn process_collection_logic(
             "Collection file already exists, skipping (use --overwrite-collection to regenerate)",
         );
 
-        // Still generate GeoParquet if requested
-        if config.geoparquet {
+        // Even when skipping regeneration, refresh the parent/root links so a
+        // collection that was first generated standalone picks up its catalog
+        // membership when re-run via `catalog` (which sets parent_href/root_href).
+        if config.parent_href.is_some() || config.root_href.is_some() {
+            let collection_content = std::fs::read_to_string(&collection_path)?;
+            let mut collection: crate::stac::StacCollection =
+                serde_json::from_str(&collection_content)?;
+            collection
+                .links
+                .retain(|l| l.rel != "parent" && l.rel != "root");
+            if let Some(parent_href) = &config.parent_href {
+                collection.links.push(stac::Link::parent(parent_href));
+            }
+            if let Some(root_href) = &config.root_href {
+                collection.links.push(stac::Link::root(root_href));
+            }
+            let updated_json = if config.pretty {
+                serde_json::to_string_pretty(&collection)?
+            } else {
+                serde_json::to_string(&collection)?
+            };
+            std::fs::write(&collection_path, &updated_json)?;
+        }
+
+        // Still generate GeoParquet if requested.
+        // Skip in config-only mode: no items dir exists and there's nothing to write.
+        if config.geoparquet && !config_only {
             let mut items_for_parquet: Vec<crate::stac::StacItem> = Vec::new();
             let spinner = create_spinner("Reading existing items for GeoParquet…");
             for entry in std::fs::read_dir(&items_dir)? {
@@ -2131,8 +2156,9 @@ async fn process_collection_logic(
         collection_builder = collection_builder.root_link(root_href);
     }
 
-    // Add GeoParquet asset marker if enabled (actual write happens after collection is built)
-    if config.geoparquet {
+    // Add GeoParquet asset marker if enabled (actual write happens after collection is built).
+    // Skip in config-only mode: no items means no parquet file will be written.
+    if config.geoparquet && !config_only {
         collection_builder = collection_builder.asset("items-geoparquet", make_geoparquet_asset());
     }
 
@@ -2148,9 +2174,10 @@ async fn process_collection_logic(
     std::fs::write(&collection_path, &collection_json)?;
     log_memory("collection-after-write-json");
 
-    // Write GeoParquet file if enabled — read items from disk to avoid holding them all in memory
+    // Write GeoParquet file if enabled — read items from disk to avoid holding them all in memory.
+    // Skip in config-only mode: there are no items, and the items dir is never created.
     let mut geoparquet_item_count = 0;
-    if config.geoparquet {
+    if config.geoparquet && !config_only {
         log_memory("geoparquet-read-start");
         let spinner = create_spinner("Reading items from disk for GeoParquet…");
         let mut geoparquet_items: Vec<crate::stac::StacItem> = Vec::new();

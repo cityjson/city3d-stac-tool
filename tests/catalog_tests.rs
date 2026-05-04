@@ -121,3 +121,138 @@ fn test_cli_catalog_command() {
     let collection_path = collection_dir.join("collection.json");
     assert!(collection_path.exists());
 }
+
+#[test]
+fn test_cli_catalog_refreshes_parent_root_links_on_existing_collection() {
+    use assert_cmd::Command;
+
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().join("data");
+    std::fs::create_dir(&data_dir).unwrap();
+
+    let cityjson_content = r#"{
+        "type": "CityJSON",
+        "version": "1.1",
+        "CityObjects": {},
+        "vertices": [],
+        "transform": {
+            "scale": [0.001, 0.001, 0.001],
+            "translate": [0.0, 0.0, 0.0]
+        }
+    }"#;
+    std::fs::write(data_dir.join("test.city.json"), cityjson_content).unwrap();
+
+    // First, generate a collection standalone (no catalog membership) so it
+    // ends up without parent/root links — mirroring registries with pre-existing
+    // collections generated before catalog membership was wired up.
+    let collection_dir = dir.path().join("standalone-collection");
+    Command::cargo_bin("city3dstac")
+        .unwrap()
+        .args([
+            "collection",
+            data_dir.to_str().unwrap(),
+            "-o",
+            collection_dir.to_str().unwrap(),
+            "--id",
+            "data",
+        ])
+        .assert()
+        .success();
+
+    let pre_links: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(collection_dir.join("collection.json")).unwrap(),
+    )
+    .unwrap();
+    let pre_rels: Vec<&str> = pre_links["links"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| l["rel"].as_str())
+        .collect();
+    assert!(!pre_rels.contains(&"parent"));
+    assert!(!pre_rels.contains(&"root"));
+
+    // Now stage that collection inside a catalog output dir and run `catalog`
+    // WITHOUT --overwrite. The existing collection.json should be preserved
+    // but updated to include parent/root links pointing at ../catalog.json.
+    let catalog_out = dir.path().join("catalog");
+    std::fs::create_dir(&catalog_out).unwrap();
+    let staged = catalog_out.join("data");
+    std::fs::create_dir(&staged).unwrap();
+    std::fs::copy(
+        collection_dir.join("collection.json"),
+        staged.join("collection.json"),
+    )
+    .unwrap();
+
+    Command::cargo_bin("city3dstac")
+        .unwrap()
+        .args([
+            "catalog",
+            data_dir.to_str().unwrap(),
+            "-o",
+            catalog_out.to_str().unwrap(),
+            "--id",
+            "test-catalog",
+            "--description",
+            "Test Catalog",
+        ])
+        .assert()
+        .success();
+
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(staged.join("collection.json")).unwrap())
+            .unwrap();
+    let links = after["links"].as_array().unwrap();
+    let parent = links
+        .iter()
+        .find(|l| l["rel"] == "parent")
+        .expect("parent link should be present");
+    assert_eq!(parent["href"], "../catalog.json");
+    let root = links
+        .iter()
+        .find(|l| l["rel"] == "root")
+        .expect("root link should be present");
+    assert_eq!(root["href"], "../catalog.json");
+    // Only one of each — running again should not duplicate them.
+    assert_eq!(links.iter().filter(|l| l["rel"] == "parent").count(), 1);
+    assert_eq!(links.iter().filter(|l| l["rel"] == "root").count(), 1);
+}
+
+#[test]
+fn test_cli_collection_config_only_with_geoparquet() {
+    use assert_cmd::Command;
+
+    let dir = tempdir().unwrap();
+    let config_path = dir.path().join("config-only.yaml");
+    let yaml = r#"id: cfg-only
+title: Config-only
+description: Collection metadata without input items
+license: CC-BY-4.0
+inputs: []
+extent:
+  spatial:
+    bbox: [4.0, 50.0, 5.0, 51.0]
+    crs: EPSG:4326
+  temporal:
+    start: '2020-01-01T00:00:00Z'
+"#;
+    std::fs::write(&config_path, yaml).unwrap();
+
+    let output_dir = dir.path().join("out");
+
+    let mut cmd = Command::cargo_bin("city3dstac").unwrap();
+    cmd.args([
+        "collection",
+        "-C",
+        config_path.to_str().unwrap(),
+        "-o",
+        output_dir.to_str().unwrap(),
+        "--geoparquet",
+    ])
+    .assert()
+    .success();
+
+    assert!(output_dir.join("collection.json").exists());
+    assert!(!output_dir.join("items.parquet").exists());
+}
