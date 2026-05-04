@@ -944,6 +944,28 @@ fn fallback_folder_name(path_str: &str) -> String {
         .to_string()
 }
 
+/// Rewrite a collection.json's `parent` and `root` links to point at the given
+/// catalog href. Existing parent/root links are dropped first so re-running is
+/// idempotent. Used by the `catalog` handler so that catalog membership lands
+/// on every staged collection.json — including ones that errored out during
+/// per-collection regeneration (e.g., transient remote-fetch failures).
+fn refresh_parent_root_links(coll_path: &Path, catalog_href: &str, pretty: bool) -> Result<()> {
+    let content = std::fs::read_to_string(coll_path)?;
+    let mut collection: crate::stac::StacCollection = serde_json::from_str(&content)?;
+    collection
+        .links
+        .retain(|l| l.rel != "parent" && l.rel != "root");
+    collection.links.push(stac::Link::parent(catalog_href));
+    collection.links.push(stac::Link::root(catalog_href));
+    let updated_json = if pretty {
+        serde_json::to_string_pretty(&collection)?
+    } else {
+        serde_json::to_string(&collection)?
+    };
+    std::fs::write(coll_path, updated_json)?;
+    Ok(())
+}
+
 async fn handle_catalog_command(config: CatalogConfig) -> Result<()> {
     use crate::config::{CatalogCliArgs, CatalogConfigFile};
     use crate::stac::StacCatalogBuilder;
@@ -1143,6 +1165,14 @@ async fn handle_catalog_command(config: CatalogConfig) -> Result<()> {
     let catalog_pb = create_progress_bar(total_collections, "Generating collections…");
     let catalog_pb_arc = std::sync::Arc::new(catalog_pb);
 
+    // Capture id_hints before the stream consumes collection_targets — used
+    // after per-collection processing to refresh parent/root links on every
+    // staged collection.json regardless of whether regeneration succeeded.
+    let collection_id_hints: Vec<String> = collection_targets
+        .iter()
+        .map(|(_, id)| id.clone())
+        .collect();
+
     let mut generated_collections: Vec<(String, String)> = Vec::new(); // (href, title)
     let mut catalog_errors: u64 = 0;
 
@@ -1291,6 +1321,25 @@ async fn handle_catalog_command(config: CatalogConfig) -> Result<()> {
         }
     }
     catalog_pb_arc.finish_and_clear();
+
+    // Refresh parent/root links on every staged collection.json. This runs
+    // regardless of per-collection processing outcomes — so collections that
+    // erred out (missing input dir, transient remote-fetch failures, etc.)
+    // still pick up catalog membership as long as a prior collection.json is
+    // on disk.
+    for id_hint in &collection_id_hints {
+        let coll_path = config.output.join(id_hint).join("collection.json");
+        if !coll_path.exists() {
+            continue;
+        }
+        if let Err(e) = refresh_parent_root_links(&coll_path, "../catalog.json", config.pretty) {
+            print_warning(format!(
+                "Failed to refresh parent/root links on {}: {}",
+                coll_path.display(),
+                e
+            ));
+        }
+    }
 
     // Generate Catalog
     let catalog_id = merged_config.id.unwrap_or_else(|| {
@@ -1910,29 +1959,8 @@ async fn process_collection_logic(
             "Collection file already exists, skipping (use --overwrite-collection to regenerate)",
         );
 
-        // Even when skipping regeneration, refresh the parent/root links so a
-        // collection that was first generated standalone picks up its catalog
-        // membership when re-run via `catalog` (which sets parent_href/root_href).
-        if config.parent_href.is_some() || config.root_href.is_some() {
-            let collection_content = std::fs::read_to_string(&collection_path)?;
-            let mut collection: crate::stac::StacCollection =
-                serde_json::from_str(&collection_content)?;
-            collection
-                .links
-                .retain(|l| l.rel != "parent" && l.rel != "root");
-            if let Some(parent_href) = &config.parent_href {
-                collection.links.push(stac::Link::parent(parent_href));
-            }
-            if let Some(root_href) = &config.root_href {
-                collection.links.push(stac::Link::root(root_href));
-            }
-            let updated_json = if config.pretty {
-                serde_json::to_string_pretty(&collection)?
-            } else {
-                serde_json::to_string(&collection)?
-            };
-            std::fs::write(&collection_path, &updated_json)?;
-        }
+        // Note: parent/root links are refreshed at the catalog level after all
+        // per-collection processing completes — see handle_catalog_command.
 
         // Still generate GeoParquet if requested.
         // Skip in config-only mode: no items dir exists and there's nothing to write.

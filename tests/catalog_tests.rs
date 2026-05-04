@@ -220,6 +220,84 @@ fn test_cli_catalog_refreshes_parent_root_links_on_existing_collection() {
 }
 
 #[test]
+fn test_cli_catalog_refreshes_parent_root_when_input_dir_missing() {
+    // Scenario: the catalog config points at a collection input that no longer
+    // exists, but a stale collection.json from a prior run is staged in the
+    // catalog output dir. Per-collection processing returns Err for that
+    // entry — we still want parent/root to land on the staged file because
+    // the catalog handler refreshes links at the catalog level.
+    use assert_cmd::Command;
+
+    let dir = tempdir().unwrap();
+
+    let catalog_out = dir.path().join("catalog");
+    std::fs::create_dir(&catalog_out).unwrap();
+    let staged = catalog_out.join("ghost-collection");
+    std::fs::create_dir(&staged).unwrap();
+
+    let stale_collection = serde_json::json!({
+        "type": "Collection",
+        "stac_version": "1.1.0",
+        "id": "ghost-collection",
+        "description": "Stale collection from a prior run",
+        "license": "proprietary",
+        "extent": {
+            "spatial": { "bbox": [[0.0, 0.0, 1.0, 1.0]] },
+            "temporal": { "interval": [["2020-01-01T00:00:00Z", null]] }
+        },
+        "links": [{
+            "rel": "self",
+            "href": "./collection.json",
+            "type": "application/json"
+        }]
+    });
+    std::fs::write(
+        staged.join("collection.json"),
+        serde_json::to_string_pretty(&stale_collection).unwrap(),
+    )
+    .unwrap();
+
+    // Pass a non-existent input path whose filename matches the staged
+    // collection's id_hint. process_collection_logic will short-circuit with
+    // "Directory not found" — but the catalog-level pass should still update
+    // parent/root on the staged file.
+    let missing_input = dir.path().join("ghost-collection");
+    assert!(!missing_input.exists());
+
+    Command::cargo_bin("city3dstac")
+        .unwrap()
+        .args([
+            "catalog",
+            missing_input.to_str().unwrap(),
+            "-o",
+            catalog_out.to_str().unwrap(),
+            "--id",
+            "test-catalog",
+            "--description",
+            "Test Catalog",
+        ])
+        .assert()
+        .success();
+
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(staged.join("collection.json")).unwrap())
+            .unwrap();
+    let links = after["links"].as_array().unwrap();
+    let parent = links
+        .iter()
+        .find(|l| l["rel"] == "parent")
+        .expect("parent link should be present even when input dir is missing");
+    assert_eq!(parent["href"], "../catalog.json");
+    let root = links
+        .iter()
+        .find(|l| l["rel"] == "root")
+        .expect("root link should be present even when input dir is missing");
+    assert_eq!(root["href"], "../catalog.json");
+    assert_eq!(links.iter().filter(|l| l["rel"] == "parent").count(), 1);
+    assert_eq!(links.iter().filter(|l| l["rel"] == "root").count(), 1);
+}
+
+#[test]
 fn test_cli_collection_config_only_with_geoparquet() {
     use assert_cmd::Command;
 
