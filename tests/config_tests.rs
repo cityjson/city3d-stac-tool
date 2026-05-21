@@ -114,6 +114,7 @@ keywords:
         description: None, // Keep from file
         license: Some("MIT".to_string()),
         base_url: None,
+        concurrency: None,
     };
 
     let merged = file_config.merge_with_cli(&cli_args);

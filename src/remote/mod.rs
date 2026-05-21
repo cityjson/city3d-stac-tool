@@ -10,10 +10,73 @@
 use crate::error::{CityJsonStacError, Result};
 use futures::StreamExt;
 use object_store::DynObjectStore;
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 use std::sync::Arc;
+use std::time::Duration;
 use tempfile::TempPath;
 use url::Url;
+
+/// Connect timeout for HTTP requests (seconds).
+const HTTP_CONNECT_TIMEOUT_SECS: u64 = 30;
+
+/// Inactivity timeout while reading the response body (seconds).
+/// This is per-read, not a total deadline — large files that keep streaming
+/// won't trip this, but a fully stalled connection will.
+const HTTP_READ_TIMEOUT_SECS: u64 = 120;
+
+/// TCP keepalive interval for idle connections.
+const HTTP_TCP_KEEPALIVE_SECS: u64 = 30;
+
+/// Maximum number of attempts (initial + retries) for HTTP downloads.
+const HTTP_MAX_ATTEMPTS: u32 = 4;
+
+/// Base backoff in milliseconds before the first retry. Doubled each attempt.
+const HTTP_BACKOFF_BASE_MS: u64 = 500;
+
+/// Cap on a single backoff delay.
+const HTTP_BACKOFF_MAX_MS: u64 = 8_000;
+
+/// Build a `reqwest::Client` tuned for large open-data downloads.
+///
+/// - `ACCEPT_ENCODING: identity` avoids servers that advertise compression but
+///   serve malformed bodies (see PLATEAU CMS).
+/// - Explicit `connect_timeout` so unreachable hosts fail fast.
+/// - `read_timeout` catches stalled connections mid-body without aborting
+///   long-but-progressing downloads.
+/// - `tcp_keepalive` keeps long downloads alive across NAT/proxy idle windows.
+fn build_http_client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(HTTP_CONNECT_TIMEOUT_SECS))
+        .read_timeout(Duration::from_secs(HTTP_READ_TIMEOUT_SECS))
+        .tcp_keepalive(Some(Duration::from_secs(HTTP_TCP_KEEPALIVE_SECS)))
+        .build()
+        .map_err(|e| CityJsonStacError::StorageError(format!("Failed to create HTTP client: {e}")))
+}
+
+/// Classify a `reqwest::Error` as transient (worth retrying) or permanent.
+fn is_transient_reqwest_error(err: &reqwest::Error) -> bool {
+    if err.is_timeout() || err.is_connect() || err.is_request() || err.is_body() || err.is_decode()
+    {
+        return true;
+    }
+    if let Some(status) = err.status() {
+        // 408 Request Timeout, 425 Too Early, 429 Too Many Requests, 5xx.
+        return status.as_u16() == 408
+            || status.as_u16() == 425
+            || status.as_u16() == 429
+            || status.is_server_error();
+    }
+    // Unknown / connection-reset style errors — give them another shot.
+    true
+}
+
+/// Sleep for the configured backoff delay for the given attempt (0-indexed).
+async fn backoff_sleep(attempt: u32) {
+    let delay_ms = HTTP_BACKOFF_BASE_MS
+        .saturating_mul(1u64 << attempt.min(10))
+        .min(HTTP_BACKOFF_MAX_MS);
+    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+}
 
 /// Create an object store from a URL string
 ///
@@ -81,33 +144,7 @@ pub async fn download_from_url(url: &str) -> Result<bytes::Bytes> {
         }
         // For HTTP/HTTPS, use reqwest directly to avoid object_store's strict
         // header requirements (e.g. Content-Length) that some servers don't provide
-        "http" | "https" => {
-            let client = reqwest::Client::builder().build().map_err(|e| {
-                CityJsonStacError::StorageError(format!("Failed to create HTTP client: {e}"))
-            })?;
-            let response = client
-                .get(url)
-                // Some open-data servers advertise compression but serve malformed bodies.
-                .header(reqwest::header::ACCEPT_ENCODING, "identity")
-                .send()
-                .await
-                .map_err(|e| {
-                    CityJsonStacError::StorageError(format!("HTTP request failed: {e}"))
-                })?;
-
-            if !response.status().is_success() {
-                return Err(CityJsonStacError::StorageError(format!(
-                    "HTTP {} for {}",
-                    response.status(),
-                    url
-                )));
-            }
-
-            let bytes = response.bytes().await.map_err(|e| {
-                CityJsonStacError::StorageError(format!("Failed to read response body: {e}"))
-            })?;
-            Ok(bytes)
-        }
+        "http" | "https" => http_get_bytes(url).await,
         scheme => Err(CityJsonStacError::StorageError(format!(
             "Unsupported URL scheme: {scheme}"
         ))),
@@ -124,33 +161,7 @@ pub async fn download_to_temp_file(url: &str, suffix: &str) -> Result<TempPath> 
 
     match parsed_url.scheme() {
         "http" | "https" => {
-            let client = reqwest::Client::builder().build().map_err(|e| {
-                CityJsonStacError::StorageError(format!("Failed to create HTTP client: {e}"))
-            })?;
-            let response = client
-                .get(url)
-                .header(reqwest::header::ACCEPT_ENCODING, "identity")
-                .send()
-                .await
-                .map_err(|e| {
-                    CityJsonStacError::StorageError(format!("HTTP request failed: {e}"))
-                })?;
-
-            if !response.status().is_success() {
-                return Err(CityJsonStacError::StorageError(format!(
-                    "HTTP {} for {}",
-                    response.status(),
-                    url
-                )));
-            }
-
-            let mut stream = response.bytes_stream();
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk.map_err(|e| {
-                    CityJsonStacError::StorageError(format!("Failed to read response body: {e}"))
-                })?;
-                temp_file.write_all(&chunk)?;
-            }
+            http_stream_to_file(url, temp_file.as_file_mut()).await?;
         }
         _ => {
             let bytes = download_from_url(url).await?;
@@ -159,6 +170,170 @@ pub async fn download_to_temp_file(url: &str, suffix: &str) -> Result<TempPath> 
     }
 
     Ok(temp_file.into_temp_path())
+}
+
+/// Download an HTTP/HTTPS URL into memory, retrying transient failures.
+async fn http_get_bytes(url: &str) -> Result<bytes::Bytes> {
+    let client = build_http_client()?;
+    let mut last_err: Option<CityJsonStacError> = None;
+
+    for attempt in 0..HTTP_MAX_ATTEMPTS {
+        if attempt > 0 {
+            log::warn!(
+                "Retrying HTTP GET ({}/{}) for {url}",
+                attempt + 1,
+                HTTP_MAX_ATTEMPTS
+            );
+            backoff_sleep(attempt - 1).await;
+        }
+
+        match try_http_get_bytes(&client, url).await {
+            Ok(bytes) => return Ok(bytes),
+            Err(HttpAttemptError::Transient(e)) => {
+                last_err = Some(CityJsonStacError::StorageError(e));
+            }
+            Err(HttpAttemptError::Permanent(e)) => {
+                return Err(CityJsonStacError::StorageError(e));
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| {
+        CityJsonStacError::StorageError(format!("HTTP request failed for {url}"))
+    }))
+}
+
+/// Stream an HTTP/HTTPS URL into the given file, retrying transient failures.
+///
+/// On retry, the file is truncated and the cursor reset so partial bytes from
+/// a failed attempt are discarded.
+async fn http_stream_to_file(url: &str, file: &mut std::fs::File) -> Result<()> {
+    let client = build_http_client()?;
+    let mut last_err: Option<CityJsonStacError> = None;
+
+    for attempt in 0..HTTP_MAX_ATTEMPTS {
+        if attempt > 0 {
+            log::warn!(
+                "Retrying HTTP stream ({}/{}) for {url}",
+                attempt + 1,
+                HTTP_MAX_ATTEMPTS
+            );
+            backoff_sleep(attempt - 1).await;
+            // Discard partial bytes from the previous attempt.
+            file.set_len(0)?;
+            file.seek(SeekFrom::Start(0))?;
+        }
+
+        match try_http_stream_to_file(&client, url, file).await {
+            Ok(()) => return Ok(()),
+            Err(HttpAttemptError::Transient(e)) => {
+                last_err = Some(CityJsonStacError::StorageError(e));
+            }
+            Err(HttpAttemptError::Permanent(e)) => {
+                return Err(CityJsonStacError::StorageError(e));
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| {
+        CityJsonStacError::StorageError(format!("HTTP request failed for {url}"))
+    }))
+}
+
+/// One attempt at a buffered HTTP GET, classified for retry.
+enum HttpAttemptError {
+    Transient(String),
+    Permanent(String),
+}
+
+async fn try_http_get_bytes(
+    client: &reqwest::Client,
+    url: &str,
+) -> std::result::Result<bytes::Bytes, HttpAttemptError> {
+    let response = client
+        .get(url)
+        .header(reqwest::header::ACCEPT_ENCODING, "identity")
+        .send()
+        .await
+        .map_err(|e| {
+            let msg = format!("HTTP request failed: {e}");
+            if is_transient_reqwest_error(&e) {
+                HttpAttemptError::Transient(msg)
+            } else {
+                HttpAttemptError::Permanent(msg)
+            }
+        })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let msg = format!("HTTP {status} for {url}");
+        if status.as_u16() == 408
+            || status.as_u16() == 425
+            || status.as_u16() == 429
+            || status.is_server_error()
+        {
+            return Err(HttpAttemptError::Transient(msg));
+        }
+        return Err(HttpAttemptError::Permanent(msg));
+    }
+
+    response.bytes().await.map_err(|e| {
+        let msg = format!("Failed to read response body: {e}");
+        if is_transient_reqwest_error(&e) {
+            HttpAttemptError::Transient(msg)
+        } else {
+            HttpAttemptError::Permanent(msg)
+        }
+    })
+}
+
+async fn try_http_stream_to_file(
+    client: &reqwest::Client,
+    url: &str,
+    file: &mut std::fs::File,
+) -> std::result::Result<(), HttpAttemptError> {
+    let response = client
+        .get(url)
+        .header(reqwest::header::ACCEPT_ENCODING, "identity")
+        .send()
+        .await
+        .map_err(|e| {
+            let msg = format!("HTTP request failed: {e}");
+            if is_transient_reqwest_error(&e) {
+                HttpAttemptError::Transient(msg)
+            } else {
+                HttpAttemptError::Permanent(msg)
+            }
+        })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let msg = format!("HTTP {status} for {url}");
+        if status.as_u16() == 408
+            || status.as_u16() == 425
+            || status.as_u16() == 429
+            || status.is_server_error()
+        {
+            return Err(HttpAttemptError::Transient(msg));
+        }
+        return Err(HttpAttemptError::Permanent(msg));
+    }
+
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| {
+            let msg = format!("Failed to read response body: {e}");
+            if is_transient_reqwest_error(&e) {
+                HttpAttemptError::Transient(msg)
+            } else {
+                HttpAttemptError::Permanent(msg)
+            }
+        })?;
+        file.write_all(&chunk).map_err(|e| {
+            HttpAttemptError::Permanent(format!("Failed to write to temp file: {e}"))
+        })?;
+    }
+    Ok(())
 }
 
 /// Extract file extension from URL or path

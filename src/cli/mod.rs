@@ -712,6 +712,7 @@ fn handle_update_catalog_command(config: UpdateCatalogConfig) -> Result<()> {
         title: config.title.clone(),
         description: config.description.clone(),
         base_url: config.base_url.clone(),
+        concurrency: None, // update-catalog does not process items
     });
 
     // Collect collection.json paths from inputs + config
@@ -1105,6 +1106,7 @@ async fn handle_catalog_command(config: CatalogConfig) -> Result<()> {
         title: config.title.clone(),
         description: config.description.clone(),
         base_url: config.base_url.clone(),
+        concurrency: config.concurrency,
     });
 
     // Create output directory
@@ -1204,11 +1206,15 @@ async fn handle_catalog_command(config: CatalogConfig) -> Result<()> {
     let config_overwrite_collections = config.overwrite_collections;
     let config_geoparquet = config.geoparquet;
 
-    let catalog_concurrency = config.concurrency.filter(|&n| n > 0).unwrap_or_else(|| {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4)
-    });
+    // CLI flag took precedence in merge_with_cli; YAML value is used as fallback.
+    let catalog_concurrency = merged_config
+        .concurrency
+        .filter(|&n| n > 0)
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+        });
 
     // Use buffer_unordered to limit both concurrency and memory usage.
     // Unlike spawn-all + join_all, this only keeps `catalog_concurrency` collections
@@ -1501,6 +1507,7 @@ async fn process_collection_logic(
             None
         },
         base_url: config.base_url.clone(),
+        concurrency: config.concurrency,
     });
 
     // Determine final inputs: CLI inputs take precedence, fall back to config inputs
@@ -1666,11 +1673,15 @@ async fn process_collection_logic(
         Fatal(CityJsonStacError),
     }
 
-    let concurrency_limit = config.concurrency.filter(|&n| n > 0).unwrap_or_else(|| {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(4)
-    });
+    // CLI flag took precedence in merge_with_cli; YAML value is used as fallback.
+    let concurrency_limit = merged_config
+        .concurrency
+        .filter(|&n| n > 0)
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+        });
 
     // Use buffer_unordered to limit both concurrency and memory usage.
     // Unlike spawn-all + join_all, this only keeps `concurrency_limit` tasks
@@ -2385,6 +2396,7 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
             None
         },
         base_url: None, // update-collection uses items_base_url for item links, not asset hrefs
+        concurrency: None,
     });
 
     log::info!(

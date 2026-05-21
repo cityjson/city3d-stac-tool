@@ -133,6 +133,12 @@ pub struct CollectionConfigFile {
     /// If provided, asset hrefs will be absolute URLs
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
+
+    /// Maximum number of items to process concurrently.
+    /// Useful for throttling against rate-limited or fragile origin servers.
+    /// CLI `--concurrency` overrides this when provided.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub concurrency: Option<usize>,
 }
 
 /// Provider configuration from YAML
@@ -280,6 +286,7 @@ impl CollectionConfigFile {
             assets: self.assets,
             inputs: self.inputs,
             base_url: cli_args.base_url.clone().or(self.base_url),
+            concurrency: cli_args.concurrency.or(self.concurrency),
         }
     }
 }
@@ -306,6 +313,11 @@ pub struct CatalogConfigFile {
     /// Base URL for catalog child links (applied to all collections)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
+
+    /// Maximum number of collections to process concurrently.
+    /// CLI `--concurrency` overrides this when provided.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub concurrency: Option<usize>,
 }
 
 impl CatalogConfigFile {
@@ -331,6 +343,7 @@ impl CatalogConfigFile {
             description: cli_args.description.clone().or(self.description),
             collections: self.collections,
             base_url: cli_args.base_url.clone().or(self.base_url),
+            concurrency: cli_args.concurrency.or(self.concurrency),
         }
     }
 }
@@ -343,6 +356,7 @@ pub struct CollectionCliArgs {
     pub description: Option<String>,
     pub license: Option<String>,
     pub base_url: Option<String>,
+    pub concurrency: Option<usize>,
 }
 
 /// CLI arguments that can override catalog config
@@ -352,6 +366,7 @@ pub struct CatalogCliArgs {
     pub title: Option<String>,
     pub description: Option<String>,
     pub base_url: Option<String>,
+    pub concurrency: Option<usize>,
 }
 
 #[cfg(test)]
@@ -393,6 +408,7 @@ mod tests {
             assets: None,
             inputs: None,
             base_url: Some("https://file.example.com/".to_string()),
+            concurrency: Some(2),
         };
 
         let cli_args = CollectionCliArgs {
@@ -401,6 +417,7 @@ mod tests {
             description: None,
             license: Some("MIT".to_string()),
             base_url: Some("https://cli.example.com/".to_string()),
+            concurrency: None,
         };
 
         let merged = file_config.merge_with_cli(&cli_args);
@@ -420,6 +437,20 @@ mod tests {
             merged.keywords,
             Some(vec!["tag1".to_string(), "tag2".to_string()])
         );
+
+        // Concurrency: file value preserved when CLI doesn't override
+        assert_eq!(merged.concurrency, Some(2));
+
+        // Concurrency: CLI overrides file when provided
+        let merged_cli_override = CollectionConfigFile {
+            concurrency: Some(2),
+            ..CollectionConfigFile::default()
+        }
+        .merge_with_cli(&CollectionCliArgs {
+            concurrency: Some(8),
+            ..CollectionCliArgs::default()
+        });
+        assert_eq!(merged_cli_override.concurrency, Some(8));
     }
 
     #[test]
