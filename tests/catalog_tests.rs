@@ -298,6 +298,134 @@ fn test_cli_catalog_refreshes_parent_root_when_input_dir_missing() {
 }
 
 #[test]
+fn test_cli_catalog_reattaches_geoparquet_asset_on_existing_collection() {
+    // Scenario: a staged collection.json sits next to an `items.parquet`
+    // sibling but is missing the collection-level `items-geoparquet` asset
+    // (e.g., produced by an older tool version or a partial regenerate path).
+    // Running `catalog` should reconcile the asset reference so consumers
+    // can discover the parquet mirror without re-running with `--geoparquet`.
+    use assert_cmd::Command;
+
+    let dir = tempdir().unwrap();
+
+    let catalog_out = dir.path().join("catalog");
+    std::fs::create_dir(&catalog_out).unwrap();
+    let staged = catalog_out.join("ghost-collection");
+    std::fs::create_dir(&staged).unwrap();
+
+    let stale_collection = serde_json::json!({
+        "type": "Collection",
+        "stac_version": "1.1.0",
+        "id": "ghost-collection",
+        "description": "Stale collection from a prior run",
+        "license": "proprietary",
+        "extent": {
+            "spatial": { "bbox": [[0.0, 0.0, 1.0, 1.0]] },
+            "temporal": { "interval": [["2020-01-01T00:00:00Z", null]] }
+        },
+        "links": []
+    });
+    std::fs::write(
+        staged.join("collection.json"),
+        serde_json::to_string_pretty(&stale_collection).unwrap(),
+    )
+    .unwrap();
+    // Sibling parquet — content is irrelevant for this test, only its presence.
+    std::fs::write(staged.join("items.parquet"), b"PAR1").unwrap();
+
+    let missing_input = dir.path().join("ghost-collection");
+
+    Command::cargo_bin("city3dstac")
+        .unwrap()
+        .args([
+            "catalog",
+            missing_input.to_str().unwrap(),
+            "-o",
+            catalog_out.to_str().unwrap(),
+            "--id",
+            "test-catalog",
+            "--description",
+            "Test Catalog",
+        ])
+        .assert()
+        .success();
+
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(staged.join("collection.json")).unwrap())
+            .unwrap();
+    let asset = after
+        .get("assets")
+        .and_then(|a| a.get("items-geoparquet"))
+        .expect("items-geoparquet asset should be reattached when items.parquet is present");
+    assert_eq!(asset["href"], "./items.parquet");
+    assert_eq!(asset["type"], "application/vnd.apache.parquet");
+    assert_eq!(asset["title"], "STAC GeoParquet items");
+    let roles = asset["roles"].as_array().unwrap();
+    assert!(roles.iter().any(|r| r == "collection-mirror"));
+}
+
+#[test]
+fn test_cli_catalog_skips_geoparquet_asset_when_parquet_absent() {
+    // Inverse of the above: no sibling parquet → no asset reference written.
+    // Guards against writing a dangling href that points at a non-existent file.
+    use assert_cmd::Command;
+
+    let dir = tempdir().unwrap();
+
+    let catalog_out = dir.path().join("catalog");
+    std::fs::create_dir(&catalog_out).unwrap();
+    let staged = catalog_out.join("ghost-collection");
+    std::fs::create_dir(&staged).unwrap();
+
+    let stale_collection = serde_json::json!({
+        "type": "Collection",
+        "stac_version": "1.1.0",
+        "id": "ghost-collection",
+        "description": "Stale collection from a prior run",
+        "license": "proprietary",
+        "extent": {
+            "spatial": { "bbox": [[0.0, 0.0, 1.0, 1.0]] },
+            "temporal": { "interval": [["2020-01-01T00:00:00Z", null]] }
+        },
+        "links": []
+    });
+    std::fs::write(
+        staged.join("collection.json"),
+        serde_json::to_string_pretty(&stale_collection).unwrap(),
+    )
+    .unwrap();
+
+    let missing_input = dir.path().join("ghost-collection");
+
+    Command::cargo_bin("city3dstac")
+        .unwrap()
+        .args([
+            "catalog",
+            missing_input.to_str().unwrap(),
+            "-o",
+            catalog_out.to_str().unwrap(),
+            "--id",
+            "test-catalog",
+            "--description",
+            "Test Catalog",
+        ])
+        .assert()
+        .success();
+
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(staged.join("collection.json")).unwrap())
+            .unwrap();
+    let no_asset = after
+        .get("assets")
+        .and_then(|a| a.get("items-geoparquet"))
+        .is_none();
+    assert!(
+        no_asset,
+        "items-geoparquet asset must NOT be added when items.parquet is absent"
+    );
+}
+
+#[test]
 fn test_cli_collection_config_only_with_geoparquet() {
     use assert_cmd::Command;
 

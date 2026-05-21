@@ -208,8 +208,7 @@ fn is_wgs84_equivalent_geographic(epsg: u32) -> bool {
 /// fed straight to proj4rs. Callers must swap (x, y) before projecting from these.
 fn is_northing_first_projected(epsg: u32) -> bool {
     matches!(
-        epsg,
-        // Estonian Coordinate System of 1997 (axis order: northing, easting)
+        epsg, // Estonian Coordinate System of 1997 (axis order: northing, easting)
         3301
     )
 }

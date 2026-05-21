@@ -327,6 +327,7 @@ enum Commands {
 /// Helper to create a GeoParquet asset
 fn make_geoparquet_asset() -> crate::stac::Asset {
     let mut asset = crate::stac::Asset::new("./items.parquet");
+    asset.title = Some("STAC GeoParquet items".to_string());
     asset.r#type = Some("application/vnd.apache.parquet".to_string());
     asset.roles = vec!["collection-mirror".to_string()];
     asset
@@ -949,6 +950,11 @@ fn fallback_folder_name(path_str: &str) -> String {
 /// idempotent. Used by the `catalog` handler so that catalog membership lands
 /// on every staged collection.json — including ones that errored out during
 /// per-collection regeneration (e.g., transient remote-fetch failures).
+///
+/// Also reconciles the `items-geoparquet` collection asset against the
+/// presence of a sibling `items.parquet`: a partial-rewrite path (catalog
+/// refresh) can otherwise silently drop the asset reference even though the
+/// parquet file is right there on disk.
 fn refresh_parent_root_links(coll_path: &Path, catalog_href: &str, pretty: bool) -> Result<()> {
     let content = std::fs::read_to_string(coll_path)?;
     let mut collection: crate::stac::StacCollection = serde_json::from_str(&content)?;
@@ -957,6 +963,18 @@ fn refresh_parent_root_links(coll_path: &Path, catalog_href: &str, pretty: bool)
         .retain(|l| l.rel != "parent" && l.rel != "root");
     collection.links.push(stac::Link::parent(catalog_href));
     collection.links.push(stac::Link::root(catalog_href));
+
+    let parquet_path = coll_path
+        .parent()
+        .map(|p| p.join("items.parquet"))
+        .unwrap_or_else(|| PathBuf::from("items.parquet"));
+    if parquet_path.exists() {
+        collection
+            .assets
+            .entry("items-geoparquet".to_string())
+            .or_insert_with(make_geoparquet_asset);
+    }
+
     let updated_json = if pretty {
         serde_json::to_string_pretty(&collection)?
     } else {
