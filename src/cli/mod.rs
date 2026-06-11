@@ -2501,6 +2501,94 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
         }
     }
 
+    // Override aggregated extent with config-provided values when present.
+    // aggregate_from_items defaults temporal to Utc::now() when items lack a
+    // datetime and can produce a mixed-CRS spatial bbox if some items predate
+    // the bbox-CRS fix; the config extent is authoritative for the collection.
+    if let Some(temporal) = merged_config
+        .extent
+        .as_ref()
+        .and_then(|e| e.temporal.as_ref())
+    {
+        let start = temporal
+            .start
+            .as_ref()
+            .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
+        let end = temporal
+            .end
+            .as_ref()
+            .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
+        collection_builder = collection_builder.temporal_extent(start, end);
+    }
+
+    if let Some(bbox) = merged_config
+        .extent
+        .as_ref()
+        .and_then(|e| e.spatial.as_ref())
+        .and_then(|s| s.bbox.as_ref())
+    {
+        let bbox3d = if bbox.len() == 6 {
+            crate::metadata::BBox3D::new(bbox[0], bbox[1], bbox[2], bbox[3], bbox[4], bbox[5])
+        } else if bbox.len() >= 4 {
+            crate::metadata::BBox3D::new(bbox[0], bbox[1], 0.0, bbox[2], bbox[3], 0.0)
+        } else {
+            return Err(crate::error::CityJsonStacError::StacError(
+                "Config bbox must have 4 or 6 elements".to_string(),
+            ));
+        };
+        // Same WGS84-range heuristic as the collection command: a bbox already
+        // inside [-180,180] x [-90,90] is treated as WGS84 even when
+        // extent.spatial.crs names a projected native CRS for the items.
+        let in_wgs84_range = bbox3d.xmin >= -180.0
+            && bbox3d.xmax <= 180.0
+            && bbox3d.ymin >= -90.0
+            && bbox3d.ymax <= 90.0;
+        let wgs84_bbox = if in_wgs84_range {
+            bbox3d
+        } else {
+            let crs = merged_config
+                .extent
+                .as_ref()
+                .and_then(|e| e.spatial.as_ref())
+                .and_then(|s| s.crs.as_deref())
+                .and_then(CRS::from_citygml_srs_name)
+                .unwrap_or_default();
+            bbox3d.to_wgs84(&crs)?
+        };
+        collection_builder = collection_builder.spatial_extent(wgs84_bbox);
+    }
+
+    // Apply curated dataset-level links from config (about/source/license/related).
+    if let Some(links) = &merged_config.links {
+        for link_cfg in links {
+            let mut link = stac::Link::new(&link_cfg.href, &link_cfg.rel);
+            link.r#type = link_cfg.link_type.clone();
+            link.title = link_cfg.title.clone();
+            collection_builder = collection_builder.link(link);
+        }
+    }
+
+    // Apply config-defined summaries alongside any auto-aggregated ones.
+    if let Some(summaries) = &merged_config.summaries {
+        for (key, value) in summaries {
+            collection_builder = collection_builder.summary(key.clone(), value.clone());
+        }
+    }
+
+    // Apply config-defined collection-level assets.
+    if let Some(assets) = &merged_config.assets {
+        for (key, asset_cfg) in assets {
+            let mut asset = stac::Asset::new(&asset_cfg.href);
+            asset.r#type = asset_cfg.media_type.clone();
+            asset.title = asset_cfg.title.clone();
+            asset.description = asset_cfg.description.clone();
+            if let Some(roles) = &asset_cfg.roles {
+                asset.roles = roles.clone();
+            }
+            collection_builder = collection_builder.asset(key.clone(), asset);
+        }
+    }
+
     // Add item links
     let max_item_links = config.max_item_links.unwrap_or(usize::MAX);
     let mut omitted_item_links = 0usize;

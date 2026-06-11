@@ -78,12 +78,15 @@ impl StacCollectionBuilder {
         self
     }
 
-    /// Set spatial extent from bounding box
+    /// Set the collection's spatial extent from a bounding box, replacing any
+    /// previously set value. (Symmetric with `temporal_extent`; the prior
+    /// push-based behaviour caused later callers — including configs — to
+    /// supplement rather than override an earlier aggregate-derived bbox.)
     pub fn spatial_extent(mut self, bbox: BBox3D) -> Self {
         let arr = bbox.to_array();
         let stac_bbox =
             stac::Bbox::ThreeDimensional([arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]]);
-        self.spatial_bboxes.push(stac_bbox);
+        self.spatial_bboxes = vec![stac_bbox];
         self
     }
 
