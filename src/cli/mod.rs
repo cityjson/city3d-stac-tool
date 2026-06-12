@@ -696,7 +696,7 @@ struct UpdateCatalogConfig {
 }
 
 fn handle_update_catalog_command(config: UpdateCatalogConfig) -> Result<()> {
-    use crate::config::{CatalogCliArgs, CatalogConfigFile};
+    use crate::config::{CatalogCliArgs, CatalogConfigFile, CollectionConfigFile};
     use crate::stac::StacCatalogBuilder;
 
     // Load config file if provided
@@ -744,7 +744,49 @@ fn handle_update_catalog_command(config: UpdateCatalogConfig) -> Result<()> {
         for coll_path_str in config_collections {
             let path = base_dir.join(coll_path_str);
             if path.is_file() {
-                collection_paths.push(path);
+                // catalog-config.yaml may reference either an existing
+                // collection.json or a collection-config YAML (the same schema
+                // the `catalog` command consumes). For the YAML case, read the
+                // config to learn the collection id, then look up the
+                // previously generated collection.json under <output>/<id>/.
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_ascii_lowercase())
+                    .unwrap_or_default();
+                if ext == "yaml" || ext == "yml" {
+                    match CollectionConfigFile::from_file(&path) {
+                        Ok(cfg) => {
+                            if let Some(id) = cfg.id {
+                                let candidate = config.output.join(&id).join("collection.json");
+                                if candidate.exists() {
+                                    collection_paths.push(candidate);
+                                } else {
+                                    print_warning(format!(
+                                        "Collection config {} declares id '{}' but no collection.json found at {}",
+                                        path.display(),
+                                        id,
+                                        candidate.display()
+                                    ));
+                                }
+                            } else {
+                                print_warning(format!(
+                                    "Collection config {} has no id; cannot locate its generated collection.json",
+                                    path.display()
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            print_warning(format!(
+                                "Failed to parse collection config {}: {}",
+                                path.display(),
+                                e
+                            ));
+                        }
+                    }
+                } else {
+                    collection_paths.push(path);
+                }
             } else if path.is_dir() {
                 let candidate = path.join("collection.json");
                 if candidate.exists() {
