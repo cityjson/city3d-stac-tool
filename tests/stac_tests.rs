@@ -93,7 +93,7 @@ mod stac_item_builder_tests {
     #[test]
     fn test_item_builder_with_data_asset() {
         let item = StacItemBuilder::new("test-id")
-            .data_asset("./data.city.json", "application/city+json", None)
+            .data_asset("./data.city.json", "application/city+json", None, None)
             .build()
             .expect("Failed to build item");
 

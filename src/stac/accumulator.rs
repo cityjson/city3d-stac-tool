@@ -25,6 +25,8 @@ pub struct ItemMetadata {
     pub city3d_materials: Option<bool>,
     /// Projection code (e.g., "EPSG:7415")
     pub proj_code: Option<String>,
+    /// Size in bytes of the data asset (STAC File Extension `file:size`)
+    pub file_size: Option<u64>,
 }
 
 impl ItemMetadata {
@@ -79,6 +81,13 @@ impl ItemMetadata {
             v
         });
 
+        // Extract file:size from the data asset (STAC File Extension fields live on assets)
+        let file_size = item
+            .assets
+            .get("data")
+            .and_then(|asset| asset.additional_fields.get("file:size"))
+            .and_then(|v| v.as_u64());
+
         Self {
             id: item.id.clone(),
             bbox: bbox_vec,
@@ -91,6 +100,7 @@ impl ItemMetadata {
             city3d_textures: get_bool("city3d:textures"),
             city3d_materials: get_bool("city3d:materials"),
             proj_code: get_string("proj:code"),
+            file_size,
         }
     }
 
@@ -121,6 +131,14 @@ pub struct AggregatedSummaries {
     pub count_max: Option<u64>,
     pub count_total: u64,
     pub merged_bbox: Option<BBox3D>,
+    /// Smallest data-asset file size observed (bytes).
+    pub size_min: Option<u64>,
+    /// Largest data-asset file size observed (bytes).
+    pub size_max: Option<u64>,
+    /// Sum of all observed file sizes (u128 to avoid overflow across many large files).
+    pub size_sum: u128,
+    /// Number of items that contributed a file size.
+    pub size_count: u64,
 }
 
 impl AggregatedSummaries {
@@ -162,6 +180,14 @@ impl AggregatedSummaries {
             self.count_min = Some(self.count_min.map_or(n, |m: u64| m.min(n)));
             self.count_max = Some(self.count_max.map_or(n, |m: u64| m.max(n)));
             self.count_total += n;
+        }
+
+        // Aggregate data-asset file sizes (STAC File Extension `file:size`)
+        if let Some(size) = metadata.file_size {
+            self.size_min = Some(self.size_min.map_or(size, |m: u64| m.min(size)));
+            self.size_max = Some(self.size_max.map_or(size, |m: u64| m.max(size)));
+            self.size_sum += size as u128;
+            self.size_count += 1;
         }
 
         // Merge bbox
@@ -290,7 +316,10 @@ mod tests {
             .additional_fields
             .insert("city3d:semantic_surfaces".to_string(), Value::Bool(true));
 
-        let asset = stac::Asset::new("./data.json");
+        let mut asset = stac::Asset::new("./data.json");
+        asset
+            .additional_fields
+            .insert("file:size".to_string(), Value::Number(1000.into()));
         item.assets.insert("data".to_string(), asset);
 
         item.links.push(stac::Link::self_("./item.json"));
@@ -318,6 +347,25 @@ mod tests {
         assert_eq!(metadata.city3d_textures, Some(true));
         assert_eq!(metadata.city3d_materials, Some(false));
         assert_eq!(metadata.city3d_semantic_surfaces, Some(true));
+        assert_eq!(metadata.file_size, Some(1000));
+    }
+
+    #[test]
+    fn test_file_size_aggregation() {
+        let mut summaries = AggregatedSummaries::default();
+
+        let mut m1 = ItemMetadata::from_item(&create_test_item());
+        m1.file_size = Some(1000);
+        summaries.merge_item(&m1);
+
+        let mut m2 = ItemMetadata::from_item(&create_test_item());
+        m2.file_size = Some(3000);
+        summaries.merge_item(&m2);
+
+        assert_eq!(summaries.size_min, Some(1000));
+        assert_eq!(summaries.size_max, Some(3000));
+        assert_eq!(summaries.size_sum, 4000);
+        assert_eq!(summaries.size_count, 2);
     }
 
     #[test]

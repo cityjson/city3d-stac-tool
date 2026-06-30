@@ -8,6 +8,27 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 
+/// Build the `file:size` collection summary as a Range Object with an extra `mean`,
+/// per the STAC File / Statistics extension convention. `mean` is the integer-rounded
+/// average of the observed sizes. Returns `None` when no sizes were observed.
+fn file_size_summary(
+    size_min: Option<u64>,
+    size_max: Option<u64>,
+    size_sum: u128,
+    size_count: u64,
+) -> Option<Value> {
+    let (min, max) = (size_min?, size_max?);
+    if size_count == 0 {
+        return None;
+    }
+    let mean = ((size_sum + (size_count as u128) / 2) / (size_count as u128)) as u64;
+    Some(serde_json::json!({
+        "minimum": min,
+        "maximum": max,
+        "mean": mean,
+    }))
+}
+
 /// Builder for STAC Collections
 pub struct StacCollectionBuilder {
     id: String,
@@ -351,6 +372,15 @@ impl StacCollectionBuilder {
                 .insert("proj:code".to_string(), serde_json::to_value(codes)?);
         }
 
+        if let Some(file_size) = file_size_summary(
+            summaries.size_min,
+            summaries.size_max,
+            summaries.size_sum,
+            summaries.size_count,
+        ) {
+            self.summaries.insert("file:size".to_string(), file_size);
+        }
+
         if let Some(merged) = &summaries.merged_bbox {
             self = self.spatial_extent(merged.clone());
         }
@@ -513,6 +543,27 @@ impl StacCollectionBuilder {
             codes.sort();
             self.summaries
                 .insert("proj:code".to_string(), serde_json::to_value(codes)?);
+        }
+
+        // Aggregate data-asset file sizes (STAC File Extension `file:size`)
+        let sizes: Vec<u64> = items
+            .iter()
+            .filter_map(|item| {
+                item.assets
+                    .get("data")
+                    .and_then(|asset| asset.additional_fields.get("file:size"))
+                    .and_then(|v| v.as_u64())
+            })
+            .collect();
+        if !sizes.is_empty() {
+            let size_min = sizes.iter().copied().min();
+            let size_max = sizes.iter().copied().max();
+            let size_sum: u128 = sizes.iter().map(|s| *s as u128).sum();
+            if let Some(file_size) =
+                file_size_summary(size_min, size_max, size_sum, sizes.len() as u64)
+            {
+                self.summaries.insert("file:size".to_string(), file_size);
+            }
         }
 
         // Merge spatial extents from item bboxes
@@ -771,6 +822,58 @@ mod tests {
         assert_eq!(stats["total"], 2);
         assert_eq!(stats["min"], 1);
         assert_eq!(stats["max"], 1);
+    }
+
+    #[test]
+    fn test_collection_file_size_summary_from_summaries() {
+        let mut summaries = crate::stac::AggregatedSummaries::default();
+        summaries.versions.insert("2.0".to_string());
+        summaries.size_min = Some(1000);
+        summaries.size_max = Some(3000);
+        summaries.size_sum = 8000;
+        summaries.size_count = 4;
+        summaries.merged_bbox = Some(BBox3D::new(0.0, 0.0, 0.0, 10.0, 10.0, 10.0));
+
+        let collection = StacCollectionBuilder::new("test")
+            .aggregate_from_summaries(&summaries)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let file_size = collection.summaries.unwrap();
+        let file_size = file_size.get("file:size").unwrap();
+        assert_eq!(file_size["minimum"], 1000);
+        assert_eq!(file_size["maximum"], 3000);
+        assert_eq!(file_size["mean"], 2000); // 8000 / 4
+
+        // File Extension declared
+        assert!(collection
+            .extensions
+            .iter()
+            .any(|e| e.contains("stac-extensions.github.io/file/")));
+    }
+
+    #[test]
+    fn test_collection_file_size_summary_from_items() {
+        let mut item = stac::Item::new("i1");
+        item.bbox = Some(vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0].try_into().unwrap());
+        let mut asset = stac::Asset::new("./data.json");
+        asset
+            .additional_fields
+            .insert("file:size".to_string(), Value::Number(2048.into()));
+        item.assets.insert("data".to_string(), asset);
+
+        let collection = StacCollectionBuilder::new("test")
+            .aggregate_from_items(&[item])
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let summaries = collection.summaries.unwrap();
+        let file_size = summaries.get("file:size").unwrap();
+        assert_eq!(file_size["minimum"], 2048);
+        assert_eq!(file_size["maximum"], 2048);
+        assert_eq!(file_size["mean"], 2048);
     }
 
     #[test]

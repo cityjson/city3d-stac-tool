@@ -7,7 +7,36 @@ use crate::reader::CityModelMetadataReader;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+use std::io::Read;
 use std::path::Path;
+
+/// Compute the checksum of a file for the STAC File Extension `file:checksum` field.
+///
+/// Returns a hex-encoded [Multihash](https://github.com/multiformats/multihash) of the
+/// file's SHA-256 digest: the bytes `0x12` (sha2-256 function code) and `0x20` (32-byte
+/// digest length) followed by the digest itself. The file is read in chunks so memory
+/// usage stays constant regardless of file size. Returns `None` if the file cannot be read.
+fn file_checksum(path: &Path) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer).ok()?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let digest = hasher.finalize();
+
+    // Multihash prefix: 0x12 = sha2-256, 0x20 = 32-byte length.
+    let mut multihash = Vec::with_capacity(2 + digest.len());
+    multihash.push(0x12);
+    multihash.push(0x20);
+    multihash.extend_from_slice(&digest);
+    Some(hex::encode(multihash))
+}
 
 /// Map encoding name to IANA/vendor media type
 fn encoding_media_type(encoding: &str) -> &'static str {
@@ -210,13 +239,15 @@ impl StacItemBuilder {
 
     /// Add a data asset pointing to the source file
     ///
-    /// Optionally accepts a file size which is placed on the asset as `file:size`
-    /// per the STAC File Extension spec (file extension fields belong on assets, not item properties).
+    /// Optionally accepts a file size and checksum which are placed on the asset as
+    /// `file:size` and `file:checksum` per the STAC File Extension spec (file extension
+    /// fields belong on assets, not item properties).
     pub fn data_asset(
         mut self,
         href: impl Into<String>,
         media_type: &str,
         file_size: Option<u64>,
+        file_checksum: Option<String>,
     ) -> Self {
         let mut asset = stac::Asset::new(href.into());
         asset.r#type = Some(media_type.to_string());
@@ -227,6 +258,13 @@ impl StacItemBuilder {
             asset
                 .additional_fields
                 .insert("file:size".to_string(), Value::Number(size.into()));
+            self.uses_file_extension = true;
+        }
+
+        if let Some(checksum) = file_checksum {
+            asset
+                .additional_fields
+                .insert("file:checksum".to_string(), Value::String(checksum));
             self.uses_file_extension = true;
         }
 
@@ -385,8 +423,9 @@ impl StacItemBuilder {
         // Add CityJSON metadata
         builder = builder.cityjson_metadata(reader)?;
 
-        // Get file size for the asset (File Extension)
+        // Get file size and checksum for the asset (File Extension)
         let file_size = std::fs::metadata(file_path).ok().map(|m| m.len());
+        let file_checksum = file_checksum(file_path);
 
         // Add data asset - detect ZIP files for proper media type
         let is_zip = file_path
@@ -422,7 +461,7 @@ impl StacItemBuilder {
             },
         };
 
-        builder = builder.data_asset(href.clone(), media_type, file_size);
+        builder = builder.data_asset(href.clone(), media_type, file_size, file_checksum);
 
         // Add city-model relation link (per STAC 3D City Models Extension)
         builder =
@@ -475,8 +514,9 @@ impl StacItemBuilder {
         // Add CityJSON metadata
         builder = builder.cityjson_metadata(reader)?;
 
-        // Get file size for the asset (File Extension)
+        // Get file size and checksum for the asset (File Extension)
         let file_size = std::fs::metadata(file_path).ok().map(|m| m.len());
+        let file_checksum = file_checksum(file_path);
 
         let is_zip = file_path
             .extension()
@@ -510,7 +550,7 @@ impl StacItemBuilder {
             },
         };
 
-        builder = builder.data_asset(href.clone(), media_type, file_size);
+        builder = builder.data_asset(href.clone(), media_type, file_size, file_checksum);
 
         // Add city-model relation link (per STAC 3D City Models Extension)
         builder =
@@ -560,6 +600,28 @@ mod tests {
         writeln!(temp_file, "{}", cityjson).unwrap();
         temp_file.flush().unwrap();
         temp_file
+    }
+
+    #[test]
+    fn test_file_checksum_is_sha256_multihash() {
+        // Write a file with known content and verify the multihash-encoded SHA-256.
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(b"hello").unwrap();
+        temp_file.flush().unwrap();
+
+        let checksum = file_checksum(temp_file.path()).unwrap();
+
+        // SHA-256("hello") prefixed with multihash header 0x12 (sha2-256) 0x20 (len 32)
+        assert_eq!(
+            checksum,
+            "12202cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+        );
+    }
+
+    #[test]
+    fn test_file_checksum_missing_file_is_none() {
+        let path = Path::new("/nonexistent/path/to/file.json");
+        assert!(file_checksum(path).is_none());
     }
 
     #[test]
@@ -616,6 +678,42 @@ mod tests {
         assert!(item.bbox.is_some());
         assert!(item.geometry.is_some());
         assert!(item.assets.contains_key("data"));
+    }
+
+    #[test]
+    fn test_item_data_asset_has_file_size_and_checksum() {
+        let temp_file = create_test_cityjson();
+        let reader = CityJSONReader::new(temp_file.path()).unwrap();
+
+        let item = StacItemBuilder::from_file(temp_file.path(), &reader, None, None)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let data_asset = item.assets.get("data").unwrap();
+
+        // file:size present and positive
+        let size = data_asset
+            .additional_fields
+            .get("file:size")
+            .and_then(|v| v.as_u64())
+            .unwrap();
+        assert!(size > 0);
+
+        // file:checksum present as a SHA-256 multihash hex string
+        let checksum = data_asset
+            .additional_fields
+            .get("file:checksum")
+            .and_then(|v| v.as_str())
+            .unwrap();
+        assert!(checksum.starts_with("1220"));
+        assert_eq!(checksum.len(), 4 + 64);
+
+        // File Extension declared
+        assert!(item
+            .extensions
+            .iter()
+            .any(|e| e.contains("stac-extensions.github.io/file/")));
     }
 
     #[test]

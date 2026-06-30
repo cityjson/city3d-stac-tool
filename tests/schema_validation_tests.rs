@@ -354,7 +354,12 @@ mod from_content_schema_tests {
             builder
         };
 
-        let builder = builder.data_asset("remote_railway.city.json", "application/city+json", None);
+        let builder = builder.data_asset(
+            "remote_railway.city.json",
+            "application/city+json",
+            None,
+            None,
+        );
         let item = builder.build().expect("Failed to build item");
         let item_json = serde_json::to_value(item).unwrap();
 
@@ -393,6 +398,7 @@ mod from_content_schema_tests {
         let builder = builder.data_asset(
             "remote_railway.city.jsonl",
             "application/city+json-seq",
+            None,
             None,
         );
         let item = builder.build().expect("Failed to build item");
@@ -816,7 +822,7 @@ mod remote_url_schema_tests {
         }
 
         let item = builder
-            .data_asset(url, "application/city+json", None)
+            .data_asset(url, "application/city+json", None, None)
             .build()
             .expect("Failed to build item");
 
@@ -855,7 +861,7 @@ mod remote_url_schema_tests {
         }
 
         let item = builder
-            .data_asset(url, "application/city+json-seq", None)
+            .data_asset(url, "application/city+json-seq", None, None)
             .build()
             .expect("Failed to build item");
 
@@ -1053,7 +1059,7 @@ mod remote_citygml_schema_tests {
         }
 
         let item = builder
-            .data_asset(url, "application/gml+xml", None)
+            .data_asset(url, "application/gml+xml", None, None)
             .build()
             .expect("Failed to build item");
 
@@ -1092,7 +1098,7 @@ mod remote_citygml_schema_tests {
         }
 
         let item = builder
-            .data_asset(url, "application/gml+xml", None)
+            .data_asset(url, "application/gml+xml", None, None)
             .build()
             .expect("Failed to build item");
 

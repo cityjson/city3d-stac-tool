@@ -49,6 +49,10 @@ flate2 = "1.0"  # GZIP decompression support
 # Date/time handling
 chrono = { version = "0.4", features = ["serde"] }
 
+# Hashing for STAC File Extension file:checksum (SHA-256 multihash)
+sha2 = "0.10"
+hex = "0.4"
+
 # Geometry
 geojson = { version = "0.24", features = ["geo-types"] }
 geo-types = "0.7"
