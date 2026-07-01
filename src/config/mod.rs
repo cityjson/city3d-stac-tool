@@ -109,7 +109,13 @@ pub struct CollectionConfigFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extent: Option<ExtentConfig>,
 
-    /// Custom summaries (merged with auto-detected)
+    /// Custom summaries. For array-valued keys (e.g. `city3d:lods`,
+    /// `city3d:co_types`), the declared values are unioned with whatever was
+    /// auto-detected from processed items rather than overwriting them — this
+    /// lets a config declare metadata that can't be derived automatically,
+    /// such as for a collection with `inputs: []` because the source only
+    /// offers an interactive/area-based download. Non-array values (or a key
+    /// with no auto-detected counterpart) simply take the config value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summaries: Option<HashMap<String, serde_json::Value>>,
 

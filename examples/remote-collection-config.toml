@@ -11,6 +11,6 @@ license = "CC-BY-4.0"
 inputs = [
   # Example: A remote CityJSON file (replace with real URL)
   "https://3d.bk.tudelft.nl/opendata/cityjson/3dcities/v2.0/3-20-DELFSHAVEN.city.json",
-  # "https://3d.bk.tudelft.nl/opendata/cityjson/3dcities/v2.0/Vienna_102081.city.json",
+  "https://3d.bk.tudelft.nl/opendata/cityjson/3dcities/v2.0/LoD3_Railway.city.json",
 ] # List of remote URLs to include in this collection.
 # The CLI will fetch only the metadata (headers) from these files to generate STAC Items.

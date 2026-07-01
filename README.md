@@ -59,6 +59,18 @@ cargo install --git ssh://git@github.com/HideBa/city3d-stac-tool.git --bin city3
 
 ## Quick Start
 
+### Try it without downloading data
+
+The `examples/` directory ships a config that pulls CityJSON straight from remote
+URLs, so you can generate a real Collection without any local data:
+
+```bash
+city3dstac collection --config examples/remote-collection-config.toml -o ./stac_output
+```
+
+This fetches metadata from each URL in `examples/remote-collection-config.toml`,
+generating one STAC Item per file plus the parent `collection.json`.
+
 ### Generate STAC Item from a single file
 
 ```bash
@@ -121,21 +133,23 @@ city3dstac item <FILE> [OPTIONS]
 
 **Arguments:**
 
-| Argument | Description     |
-| -------- | --------------- |
-| `<FILE>` | Input file path |
+| Argument | Description                                           |
+| -------- | ----------------------------------------------------- |
+| `<FILE>` | Input file path or remote URL (`http://`, `https://`) |
 
 **Options:**
 
-| Option                     | Description                                         |
-| -------------------------- | --------------------------------------------------- |
-| `-o, --output <PATH>`      | Output file path (default: `<input>.item.json`)     |
-| `--id <ID>`                | Custom STAC Item ID (default: file stem)            |
-| `--title <TITLE>`          | Item title                                          |
-| `-d, --description <DESC>` | Item description                                    |
-| `-c, --collection <ID>`    | Parent collection ID (adds collection link)         |
-| `--base-url <URL>`         | Base URL for asset hrefs (makes them absolute URLs) |
-| `--pretty`                 | Pretty-print JSON output (default: true)            |
+| Option                     | Description                                          |
+| -------------------------- | ---------------------------------------------------- |
+| `-o, --output <PATH>`      | Output file path (default: `<input>.item.json`)      |
+| `--id <ID>`                | Custom STAC Item ID (default: file stem)             |
+| `--title <TITLE>`          | Item title                                           |
+| `-d, --description <DESC>` | Item description                                     |
+| `-c, --collection <ID>`    | Parent collection ID (adds collection link)          |
+| `--base-url <URL>`         | Base URL for asset hrefs (makes them absolute URLs)  |
+| `--pretty`                 | Pretty-print JSON output (default: true)             |
+| `-v, --verbose`            | Verbose output                                       |
+| `--dry-run`                | Validate config and inputs without generating output |
 
 **Examples:**
 
@@ -176,19 +190,29 @@ city3dstac collection <DIRECTORY> [OPTIONS]
 
 **Options:**
 
-| Option                     | Description                                         |
-| -------------------------- | --------------------------------------------------- |
-| `-o, --output <PATH>`      | Output directory (default: `./stac_output`)         |
-| `-C, --config <FILE>`      | Configuration file (YAML or TOML)                   |
-| `--id <ID>`                | Collection ID (default: directory name)             |
-| `--title <TITLE>`          | Collection title                                    |
-| `-d, --description <DESC>` | Collection description                              |
-| `-l, --license <LICENSE>`  | Data license (default: `proprietary`)               |
-| `-r, --recursive`          | Scan subdirectories recursively (default: true)     |
-| `--max-depth <N>`          | Maximum directory depth                             |
-| `--skip-errors`            | Skip files with errors (default: true)              |
-| `--base-url <URL>`         | Base URL for asset hrefs (makes them absolute URLs) |
-| `--pretty`                 | Pretty-print JSON output (default: true)            |
+| Option                     | Description                                            |
+| -------------------------- | ------------------------------------------------------ |
+| `-o, --output <PATH>`      | Output directory (default: `./stac_output`)            |
+| `-C, --config <FILE>`      | Configuration file (YAML or TOML)                      |
+| `--id <ID>`                | Collection ID (default: directory name)                |
+| `--title <TITLE>`          | Collection title                                       |
+| `-d, --description <DESC>` | Collection description                                 |
+| `-l, --license <LICENSE>`  | Data license (default: `proprietary`)                  |
+| `-r, --recursive`          | Scan subdirectories recursively (default: true)        |
+| `--max-depth <N>`          | Maximum directory depth                                |
+| `--skip-errors`            | Skip files with errors (default: true)                 |
+| `--include <PATTERN>`      | Glob patterns to include (e.g. `*.json`, `*.jsonl`)    |
+| `--exclude <PATTERN>`      | Glob patterns to exclude (e.g. `*test*`, `*.bak`)      |
+| `--base-url <URL>`         | Base URL for asset hrefs (makes them absolute URLs)    |
+| `--pretty`                 | Pretty-print JSON output (default: true)               |
+| `--overwrite-items`        | Overwrite existing item files                          |
+| `--overwrite-collection`   | Overwrite existing collection file                     |
+| `--overwrite`              | Overwrite all (items and collection)                   |
+| `--geoparquet`             | Also generate a STAC GeoParquet file (`items.parquet`) |
+| `--concurrency <N>`        | Maximum number of files to process concurrently        |
+| `--max-item-links <N>`     | Max per-item links in `collection.json` (`0` disables) |
+| `-v, --verbose`            | Verbose output                                         |
+| `--dry-run`                | Validate config and inputs without generating output   |
 
 **Output Structure:**
 
@@ -244,16 +268,24 @@ city3dstac catalog <DIRS>... [OPTIONS]
 
 **Options:**
 
-| Option                     | Description                                          |
-| -------------------------- | ---------------------------------------------------- |
-| `-o, --output <PATH>`      | Output directory (default: `./catalog`)              |
-| `-C, --config <FILE>`      | Configuration file (YAML or TOML)                    |
-| `--id <ID>`                | Catalog ID (default: output dir name)                |
-| `--title <TITLE>`          | Catalog title                                        |
-| `-d, --description <DESC>` | Catalog description                                  |
-| `-l, --license <LICENSE>`  | License for sub-collections (default: `proprietary`) |
-| `--base-url <URL>`         | Base URL for catalog child links                     |
-| `--pretty`                 | Pretty-print JSON output (default: true)             |
+| Option                     | Description                                                           |
+| -------------------------- | --------------------------------------------------------------------- |
+| `-o, --output <PATH>`      | Output directory (default: `./catalog`)                               |
+| `-C, --config <FILE>`      | Configuration file (YAML or TOML)                                     |
+| `--id <ID>`                | Catalog ID (default: output dir name)                                 |
+| `--title <TITLE>`          | Catalog title                                                         |
+| `-d, --description <DESC>` | Catalog description                                                   |
+| `-l, --license <LICENSE>`  | License for sub-collections (default: `proprietary`)                  |
+| `--base-url <URL>`         | Base URL for catalog child links                                      |
+| `--pretty`                 | Pretty-print JSON output (default: true)                              |
+| `--overwrite-items`        | Overwrite existing item files                                         |
+| `--overwrite-collections`  | Overwrite existing collection files                                   |
+| `--overwrite`              | Overwrite all (items, collections, and catalog)                       |
+| `--geoparquet`             | Also generate a STAC GeoParquet file (`items.parquet`) per collection |
+| `--concurrency <N>`        | Maximum number of collections to process concurrently                 |
+| `--max-item-links <N>`     | Max per-item links in each `collection.json` (`0` disables)           |
+| `-v, --verbose`            | Verbose output                                                        |
+| `--dry-run`                | Validate config and inputs without generating output                  |
 
 **Examples:**
 
@@ -290,16 +322,22 @@ city3dstac aggregate <ITEMS>... [OPTIONS]  # alias
 
 **Options:**
 
-| Option                     | Description                                        |
-| -------------------------- | -------------------------------------------------- |
-| `-o, --output <PATH>`      | Output file path (default: `./collection.json`)    |
-| `--id <ID>`                | Collection ID (default: output file stem)          |
-| `--title <TITLE>`          | Collection title                                   |
-| `-d, --description <DESC>` | Collection description                             |
-| `-l, --license <LICENSE>`  | Data license (default: `proprietary`)              |
-| `--items-base-url <URL>`   | Base URL for item links (makes them absolute URLs) |
-| `--skip-errors`            | Skip items with parsing errors (default: true)     |
-| `--pretty`                 | Pretty-print JSON output (default: true)           |
+| Option                     | Description                                                                |
+| -------------------------- | -------------------------------------------------------------------------- |
+| `-o, --output <PATH>`      | Output file path (default: `./collection.json`)                            |
+| `-C, --config <FILE>`      | YAML configuration file for collection metadata                            |
+| `--id <ID>`                | Collection ID (default: output file stem)                                  |
+| `--title <TITLE>`          | Collection title                                                           |
+| `-d, --description <DESC>` | Collection description                                                     |
+| `-l, --license <LICENSE>`  | Data license (default: `proprietary`)                                      |
+| `--items-base-url <URL>`   | Base URL for item links (makes them absolute URLs)                         |
+| `--items-from-file <FILE>` | Read item paths from a text file (one per line); use past shell arg limits |
+| `--skip-errors`            | Skip items with parsing errors (default: true)                             |
+| `--pretty`                 | Pretty-print JSON output (default: true)                                   |
+| `--geoparquet`             | Also generate a STAC GeoParquet file (`items.parquet`)                     |
+| `--max-item-links <N>`     | Max per-item links in `collection.json` (`0` disables)                     |
+| `-v, --verbose`            | Verbose output                                                             |
+| `--dry-run`                | Validate config/inputs without generating output                           |
 
 **Aggregated Metadata:**
 

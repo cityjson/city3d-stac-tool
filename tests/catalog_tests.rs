@@ -1,7 +1,16 @@
 use city3d_stac::config::CatalogConfigFile;
 use city3d_stac::stac::StacCatalogBuilder;
 use std::io::Write;
+use std::path::Path;
 use tempfile::tempdir;
+
+/// Test data directory path
+fn test_data_path(filename: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("data")
+        .join(filename)
+}
 
 #[test]
 fn test_catalog_config_from_toml() {
@@ -73,18 +82,12 @@ fn test_cli_catalog_command() {
     let data_dir = dir.path().join("data");
     std::fs::create_dir(&data_dir).unwrap();
 
-    // Create a dummy CityJSON file
-    let cityjson_content = r#"{
-        "type": "CityJSON",
-        "version": "1.1",
-        "CityObjects": {},
-        "vertices": [],
-        "transform": {
-            "scale": [0.001, 0.001, 0.001],
-            "translate": [0.0, 0.0, 0.0]
-        }
-    }"#;
-    std::fs::write(data_dir.join("test.city.json"), cityjson_content).unwrap();
+    // Use a real CityJSON fixture rather than a synthetic empty one.
+    std::fs::copy(
+        test_data_path("delft.city.json"),
+        data_dir.join("delft.city.json"),
+    )
+    .unwrap();
 
     let output_dir = dir.path().join("catalog");
 
@@ -130,17 +133,11 @@ fn test_cli_catalog_refreshes_parent_root_links_on_existing_collection() {
     let data_dir = dir.path().join("data");
     std::fs::create_dir(&data_dir).unwrap();
 
-    let cityjson_content = r#"{
-        "type": "CityJSON",
-        "version": "1.1",
-        "CityObjects": {},
-        "vertices": [],
-        "transform": {
-            "scale": [0.001, 0.001, 0.001],
-            "translate": [0.0, 0.0, 0.0]
-        }
-    }"#;
-    std::fs::write(data_dir.join("test.city.json"), cityjson_content).unwrap();
+    std::fs::copy(
+        test_data_path("delft.city.json"),
+        data_dir.join("delft.city.json"),
+    )
+    .unwrap();
 
     // First, generate a collection standalone (no catalog membership) so it
     // ends up without parent/root links — mirroring registries with pre-existing

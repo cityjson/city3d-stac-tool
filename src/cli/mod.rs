@@ -2202,10 +2202,10 @@ async fn process_collection_logic(
         }
     }
 
-    // Apply config summaries (merged with auto-detected)
+    // Apply config summaries, unioned with any auto-detected values for the same key
     if let Some(summaries) = &merged_config.summaries {
         for (key, value) in summaries {
-            collection_builder = collection_builder.summary(key.clone(), value.clone());
+            collection_builder = collection_builder.summary_union(key.clone(), value.clone());
         }
     }
 
@@ -2610,10 +2610,10 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
         }
     }
 
-    // Apply config-defined summaries alongside any auto-aggregated ones.
+    // Apply config-defined summaries, unioned with any auto-aggregated ones.
     if let Some(summaries) = &merged_config.summaries {
         for (key, value) in summaries {
-            collection_builder = collection_builder.summary(key.clone(), value.clone());
+            collection_builder = collection_builder.summary_union(key.clone(), value.clone());
         }
     }
 

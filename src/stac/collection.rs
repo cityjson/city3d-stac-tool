@@ -128,6 +128,45 @@ impl StacCollectionBuilder {
         self
     }
 
+    /// Add a summary property, taking the union with any existing array value
+    /// for the same key instead of overwriting it.
+    ///
+    /// Used to merge config-declared summaries (e.g. `city3d:lods` sourced from
+    /// a curated dataset index, for collections where inputs can't be read
+    /// directly) with values auto-detected from processed items, so neither
+    /// source clobbers the other. Elements are deduplicated by their string/
+    /// number/bool representation; non-array values, or a key with no prior
+    /// array value, fall back to a plain overwrite.
+    pub fn summary_union(mut self, key: impl Into<String>, value: Value) -> Self {
+        let key = key.into();
+
+        fn dedup_key(v: &Value) -> Option<String> {
+            match v {
+                Value::String(s) => Some(s.clone()),
+                Value::Number(n) => Some(n.to_string()),
+                Value::Bool(b) => Some(format!("bool:{b}")),
+                _ => None,
+            }
+        }
+
+        let merged = match (self.summaries.get(&key), &value) {
+            (Some(Value::Array(existing)), Value::Array(incoming)) => {
+                let mut unioned: std::collections::BTreeMap<String, Value> =
+                    std::collections::BTreeMap::new();
+                for v in existing.iter().chain(incoming.iter()) {
+                    if let Some(k) = dedup_key(v) {
+                        unioned.entry(k).or_insert_with(|| v.clone());
+                    }
+                }
+                Value::Array(unioned.into_values().collect())
+            }
+            _ => value,
+        };
+
+        self.summaries.insert(key, merged);
+        self
+    }
+
     /// Add a link
     pub fn link(mut self, link: stac::Link) -> Self {
         self.links.push(link);
@@ -784,6 +823,68 @@ mod tests {
         assert_eq!(collection.title, Some("Test Collection".to_string()));
         assert_eq!(collection.license, "CC-BY-4.0");
         assert!(!collection.extent.spatial.bbox.is_empty());
+    }
+
+    #[test]
+    fn test_summary_union_merges_arrays_and_dedupes() {
+        let builder = StacCollectionBuilder::new("test-collection")
+            .summary("city3d:lods", serde_json::json!(["1", "2"]))
+            .summary_union("city3d:lods", serde_json::json!(["2", "3"]));
+
+        let value = builder.summaries.get("city3d:lods").unwrap();
+        let mut lods: Vec<&str> = value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        lods.sort();
+        assert_eq!(lods, vec!["1", "2", "3"]);
+    }
+
+    #[test]
+    fn test_summary_union_dedupes_number_and_string_representations() {
+        let builder = StacCollectionBuilder::new("test-collection")
+            .summary("city3d:lods", serde_json::json!([1, 2]))
+            .summary_union("city3d:lods", serde_json::json!(["2", "3"]));
+
+        let value = builder.summaries.get("city3d:lods").unwrap();
+        let lods: Vec<&Value> = value.as_array().unwrap().iter().collect();
+        // "2" (number) and "2" (string) dedupe to a single entry
+        assert_eq!(lods.len(), 3);
+    }
+
+    #[test]
+    fn test_summary_union_no_existing_value_falls_back_to_config() {
+        let builder = StacCollectionBuilder::new("test-collection").summary_union(
+            "city3d:co_types",
+            serde_json::json!(["Building", "TINRelief"]),
+        );
+
+        let value = builder.summaries.get("city3d:co_types").unwrap();
+        let types: Vec<&str> = value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(types, vec!["Building", "TINRelief"]);
+    }
+
+    #[test]
+    fn test_summary_union_non_array_overwrites() {
+        let builder = StacCollectionBuilder::new("test-collection")
+            .summary(
+                "city3d:city_objects",
+                serde_json::json!({"min": 1, "max": 2, "total": 3}),
+            )
+            .summary_union(
+                "city3d:city_objects",
+                serde_json::json!({"min": 1, "max": 5, "total": 10}),
+            );
+
+        let value = builder.summaries.get("city3d:city_objects").unwrap();
+        assert_eq!(value["max"], 5);
     }
 
     #[test]
