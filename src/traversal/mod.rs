@@ -49,7 +49,8 @@ pub fn find_files(
             // Check if file has a supported extension
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 match ext.to_lowercase().as_str() {
-                    "json" | "jsonl" | "cjseq" | "fcb" | "parquet" => {
+                    "json" | "jsonl" | "cjseq" | "fcb" | "parquet" | "gml" | "xml" | "zip"
+                    | "gz" => {
                         files.push(path.to_path_buf());
                     }
                     _ => {}
@@ -273,7 +274,7 @@ fn is_supported_file(path: &Path) -> bool {
         .map(|ext| {
             matches!(
                 ext.to_lowercase().as_str(),
-                "json" | "jsonl" | "cjseq" | "fcb" | "parquet"
+                "json" | "jsonl" | "cjseq" | "fcb" | "parquet" | "gml" | "xml" | "zip" | "gz"
             )
         })
         .unwrap_or(false)
@@ -300,6 +301,29 @@ mod tests {
 
         // Should find .json, .jsonl, and .fcb, but not .txt
         assert_eq!(files.len(), 3);
+    }
+
+    #[test]
+    fn test_find_files_citygml_and_containers() {
+        let temp_dir = TempDir::new().unwrap();
+        let dir_path = temp_dir.path();
+
+        // CityGML and container formats are supported by the reader dispatch
+        // (see reader::get_reader) and must be discoverable in directories.
+        fs::write(dir_path.join("city.gml"), "").unwrap();
+        fs::write(dir_path.join("city.xml"), "").unwrap();
+        fs::write(dir_path.join("city.city.json.gz"), "").unwrap();
+        fs::write(dir_path.join("city.zip"), "").unwrap();
+        fs::write(dir_path.join("readme.txt"), "").unwrap();
+
+        let files = find_files(dir_path, false, None).unwrap();
+
+        // .gml, .xml, .gz, .zip should be found; .txt should not.
+        assert_eq!(files.len(), 4);
+        assert!(is_supported_file(&dir_path.join("city.gml")));
+        assert!(is_supported_file(&dir_path.join("city.xml")));
+        assert!(is_supported_file(&dir_path.join("city.zip")));
+        assert!(is_supported_file(&dir_path.join("city.city.json.gz")));
     }
 
     #[test]
