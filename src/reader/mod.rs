@@ -61,7 +61,7 @@ impl InputSource {
 /// * `source` - InputSource (local path or URL)
 ///
 /// # Returns
-/// Box<dyn CityModelMetadataReader>
+/// `Box<dyn CityModelMetadataReader>`
 ///
 /// # Errors
 /// Returns error if:

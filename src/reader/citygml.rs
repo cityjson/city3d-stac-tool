@@ -228,12 +228,12 @@ impl CityGMLReader {
                                 | "SolitaryVegetationObject"
                                 | "LandUse"
                                 | "CityFurniture"
-                                | "GenericCityObject" => {
-                                    if depth == 3 {
-                                        // Direct child of cityObjectMember
-                                        let full_type = type_name.to_string();
-                                        metadata.city_object_types.insert(full_type);
-                                    }
+                                | "GenericCityObject"
+                                    if depth == 3 =>
+                                {
+                                    // Direct child of cityObjectMember
+                                    let full_type = type_name.to_string();
+                                    metadata.city_object_types.insert(full_type);
                                 }
                                 _ => {}
                             }

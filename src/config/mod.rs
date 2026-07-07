@@ -135,7 +135,7 @@ pub struct CollectionConfigFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inputs: Option<InputsConfig>,
 
-    /// Base URL for asset hrefs (e.g., "https://example.com/data/")
+    /// Base URL for asset hrefs (e.g., `https://example.com/data/`)
     /// If provided, asset hrefs will be absolute URLs
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,

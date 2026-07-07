@@ -151,7 +151,7 @@ impl StacItemBuilder {
     /// Add 3D City Models extension properties from metadata reader
     ///
     /// Uses the STAC 3D City Models Extension (city3d: prefix)
-    /// https://cityjson.github.io/stac-city3d/v0.2.0/schema.json
+    /// <https://cityjson.github.io/stac-city3d/v0.2.0/schema.json>
     pub fn cityjson_metadata(mut self, reader: &dyn CityModelMetadataReader) -> Result<Self> {
         // Extract referenceDate from CityJSON metadata → set as datetime
         if let Ok(Some(metadata)) = reader.metadata() {

@@ -54,7 +54,7 @@ impl CRS {
     }
 
     /// Create a CRS from CityJSON metadata format
-    /// CityJSON stores CRS as a URL like: "https://www.opengis.net/def/crs/EPSG/0/7415"
+    /// CityJSON stores CRS as a URL like: `https://www.opengis.net/def/crs/EPSG/0/7415`
     pub fn from_cityjson_url(url: &str) -> Option<Self> {
         // Parse EPSG code from URL (use next_back for efficiency on DoubleEndedIterator)
         if let Some(parts) = url.split('/').next_back() {
