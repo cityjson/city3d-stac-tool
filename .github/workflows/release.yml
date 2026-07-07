@@ -34,7 +34,7 @@ jobs:
         with:
           ref: main
           # PAT with contents:write that can push to protected main.
-          token: ${{ secrets.RELEASE_TOKEN }}
+          token: ${{ secrets.GA_TOKEN }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
