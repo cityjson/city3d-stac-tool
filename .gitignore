@@ -28,3 +28,6 @@ scripts/crawlers/
 
 *.local.*
 .env
+.agent/
+.agents/
+.serena/
