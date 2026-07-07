@@ -110,6 +110,14 @@ jsonschema = "0.26"
 parquet = { version = "54", features = ["arrow"] }
 
 
+# openssl-sys is only pulled in transitively (fcb_core -> cjseq2 -> reqwest 0.11
+# with native-tls) and is only actually compiled on Linux. Cross-compiling to
+# aarch64-linux has no system ARM64 OpenSSL, so force the vendored build (openssl
+# compiled from source) for that target only. Other targets use their native TLS
+# backend (SChannel on Windows, Secure Transport on macOS) or the system library.
+[target.aarch64-unknown-linux-gnu.dependencies]
+openssl-sys = { version = "0.9", features = ["vendored"] }
+
 [features]
 default = []
 parallel = ["rayon"]
