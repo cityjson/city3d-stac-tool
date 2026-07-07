@@ -1,6 +1,6 @@
 [package]
 name = "city3d_stac"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Hidemichi Baba"]
 description = "Generate STAC metadata for CityJSON datasets"
