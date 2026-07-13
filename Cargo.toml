@@ -97,7 +97,7 @@ indexmap = { version = "2", features = ["serde"] }
 rayon = { version = "1.10", optional = true }
 
 # Optional: runtime JSON Schema validation
-jsonschema = { version = "0.26", optional = true }
+jsonschema = { version = "0.44", optional = true }
 toml = "0.8"
 
 [dev-dependencies]
@@ -106,7 +106,7 @@ assert_cmd = "2.0"
 predicates = "3.1"
 pretty_assertions = "1.4"
 typify = "0.6.1"
-jsonschema = "0.26"
+jsonschema = "0.44"
 parquet = { version = "54", features = ["arrow"] }
 
 
