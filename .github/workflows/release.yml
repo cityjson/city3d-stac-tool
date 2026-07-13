@@ -170,7 +170,7 @@ jobs:
           cat checksums.txt
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: ${{ needs.prepare.outputs.tag }}
