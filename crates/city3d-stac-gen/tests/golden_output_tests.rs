@@ -84,6 +84,22 @@ fn golden_item_fcb() {
     assert_golden("item_all.fcb.json", &item_json("all.fcb"));
 }
 
+#[test]
+fn golden_item_with_datetime() {
+    // The other six fixtures above all carry no `referenceDate`, so every
+    // other golden Item pins `"datetime": null`. This is the one fixture
+    // whose CityJSON metadata supplies a `referenceDate`, exercising the
+    // non-null path through `datetime_from_reference_date` and the custom
+    // permissive datetime (de)serialisation — one of the few things that
+    // genuinely changed in the local-Item swap. Lives in a subdirectory so
+    // the non-recursive collection scan below (max_depth 1) does not pick
+    // it up and perturb `collection_test_data.json`.
+    assert_golden(
+        "item_with_reference_date.city.json.json",
+        &item_json("datetime_fixture/with_reference_date.city.json"),
+    );
+}
+
 /// Build a collection over the whole `tests/data` fixture directory the same way
 /// the CLI's `collection` command discovers files (`find_files_with_patterns`,
 /// non-recursive, no include/exclude filters — see `process_collection_logic` in
