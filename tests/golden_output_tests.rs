@@ -52,25 +52,31 @@ fn golden_item_delft_cityjson() {
 
 #[test]
 fn golden_item_delft_cityjsonseq() {
-    assert_golden(
-        "item_delft.city.jsonl.json",
-        &item_json("delft.city.jsonl"),
-    );
+    assert_golden("item_delft.city.jsonl.json", &item_json("delft.city.jsonl"));
 }
 
 #[test]
 fn golden_item_railway_cityjson() {
-    assert_golden("item_railway.city.json.json", &item_json("railway.city.json"));
+    assert_golden(
+        "item_railway.city.json.json",
+        &item_json("railway.city.json"),
+    );
 }
 
 #[test]
 fn golden_item_citygml2() {
-    assert_golden("item_3dbag_citygml2.gml.json", &item_json("3dbag_citygml2.gml"));
+    assert_golden(
+        "item_3dbag_citygml2.gml.json",
+        &item_json("3dbag_citygml2.gml"),
+    );
 }
 
 #[test]
 fn golden_item_citygml3() {
-    assert_golden("item_3dbag_citygml3.gml.json", &item_json("3dbag_citygml3.gml"));
+    assert_golden(
+        "item_3dbag_citygml3.gml.json",
+        &item_json("3dbag_citygml3.gml"),
+    );
 }
 
 #[test]
@@ -113,8 +119,7 @@ fn golden_item_fcb() {
 /// (deterministic) serialisation order untouched.
 fn collection_json() -> String {
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
-    let files = find_files_with_patterns(&[data_dir], &[], &[], false, None)
-        .expect("find files");
+    let files = find_files_with_patterns(&[data_dir], &[], &[], false, None).expect("find files");
     let readers: Vec<Box<dyn CityModelMetadataReader>> = files
         .iter()
         .map(|f| get_reader(f).expect("reader"))
