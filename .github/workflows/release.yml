@@ -50,7 +50,7 @@ jobs:
           set -euo pipefail
           cargo set-version --bump "$LEVEL"
           VERSION=$(cargo metadata --format-version 1 --no-deps \
-            | jq -r '.packages[] | select(.name == "city3d_stac") | .version')
+            | jq -r '.packages[] | select(.name == "city3d-stac-gen") | .version')
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Bumped to ${VERSION}"

@@ -6,12 +6,12 @@ default:
 
 # Generate STAC types from JSON schemas
 #
-# Note: STAC types are manually maintained in src/stac/models.rs
+# Note: STAC types are manually maintained in crates/city3d-stac-gen/src/stac/models.rs
 # These types are derived from STAC v1.0.0 JSON schemas and match
 # the official STAC specification structure.
 #
 # To modify STAC types:
-# 1. Edit src/stac/models.rs
+# 1. Edit crates/city3d-stac-gen/src/stac/models.rs
 # 2. Run `cargo build` to recompile with changes
 # 3. Run tests to verify changes
 
@@ -39,7 +39,7 @@ regen: clean build
 
 # install the binary locally
 install:
-    cargo install --path .
+    cargo install --path crates/city3d-stac-gen
 
 # Setup development environment (git hooks)
 setup:
@@ -127,12 +127,12 @@ run-release +args='':
 
 # Generate example STAC item from test data
 example-item:
-    cargo run -- item tests/data/delft.city.json -o target/example_item.json --pretty
+    cargo run -- item crates/city3d-stac-gen/tests/data/delft.city.json -o target/example_item.json --pretty
     @echo "Generated: target/example_item.json"
 
 # Generate example STAC collection from test data
 example-collection:
-    cargo run -- collection tests/data -o target/example_collection --pretty
+    cargo run -- collection crates/city3d-stac-gen/tests/data -o target/example_collection --pretty
     @echo "Generated: target/example_collection/"
 
 # Generate example STAC catalog from config

@@ -1,134 +1,23 @@
-[package]
-name = "city3d_stac"
-version = "0.3.0"
+[workspace]
+resolver = "2"
+members = ["crates/city3d-stac-types", "crates/city3d-stac-gen"]
+
+[workspace.package]
 edition = "2021"
 authors = ["Hidemichi Baba"]
-description = "Generate STAC metadata for CityJSON datasets"
 license = "MIT"
 repository = "https://github.com/cityjson/city3d-stac-tool"
-readme = "README.md"
-keywords = ["stac", "cityjson", "3d", "gis", "geospatial"]
-categories = ["command-line-utilities", "science::geo"]
-exclude = [
-    "tests/data/",
-    ".agent/",
-    ".agents/",
-    ".serena/",
-    ".devcontainer/",
-    ".githooks/",
-    ".github/",
-    "DESIGN_DOC.md",
-    "plan.md",
-    "task.md",
-    "Justfile",
-    "scripts/",
-]
 
-[dependencies]
-# CLI
-clap = { version = "4.5", features = ["derive", "cargo"] }
-indicatif = { version = "0.17", features = ["rayon"] }
-console = "0.15"
-
-# Serialization
+[workspace.dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9"
-
-# Error handling
-anyhow = "1.0"
-thiserror = "1.0"
-
-# File I/O and directory traversal
-walkdir = "2.4"
-glob = "0.3"
-regex = "1"
-zip = "2"       # ZIP archive support for bundled CityJSON/CityGML files
-flate2 = "1.0"  # GZIP decompression support
-
-# Date/time handling
 chrono = { version = "0.4", features = ["serde"] }
-
-# Hashing for STAC File Extension file:checksum (SHA-256 multihash)
+indexmap = { version = "2", features = ["serde"] }
+thiserror = "1.0"
 sha2 = "0.10"
 hex = "0.4"
-
-# Geometry
-geojson = { version = "0.24", features = ["geo-types"] }
-geo-types = "0.7"
-
-# Logging
-log = "0.4"
-env_logger = "0.11"
-
-# FlatCityBuf support
-fcb_core = "0.6"
-cjseq = "0.4"
-
-# XML parsing for CityGML support
-quick-xml = { version = "0.37", features = ["serialize"] }
-
-# URL handling for STAC links
-url = { version = "2.5", features = ["serde"] }
-
-# Async runtime and unified object storage access
-tokio = { version = "1.40", features = ["fs", "rt-multi-thread", "macros"] }
-object_store = { version = "0.11", features = ["http", "aws", "azure", "gcp"] }
-bytes = "1.8"
-tokio-util = { version = "0.7", features = ["io"] }
-futures = "0.3"
-tempfile = "3.10"
-reqwest = { version = "0.12", features = [
-    "rustls-tls",
-], default-features = false }
-
-# Coordinate projection (CRS transformation to WGS84) - pure Rust
 proj4rs = { version = "0.1", features = ["crs-definitions"] }
-
-# STAC types and validation
-stac = { version = "0.16", features = ["geoparquet"] }
-stac-validate = "0.6"
-indexmap = { version = "2", features = ["serde"] }
-
-# GeoParquet output is handled by stac crate's geoparquet feature
-# parquet is only needed in dev for metadata verification tests
-
-# Optional: for parallel processing
-rayon = { version = "1.10", optional = true }
-
-# Optional: runtime JSON Schema validation
-jsonschema = { version = "0.26", optional = true }
-toml = "0.8"
-
-[dev-dependencies]
-# tempfile is now in main dependencies
-assert_cmd = "2.0"
-predicates = "3.1"
-pretty_assertions = "1.4"
-typify = "0.6.1"
-jsonschema = "0.26"
-parquet = { version = "54", features = ["arrow"] }
-
-
-# openssl-sys is only pulled in transitively (fcb_core -> cjseq2 -> reqwest 0.11
-# with native-tls) and is only actually compiled on Linux. Cross-compiling to
-# aarch64-linux has no system ARM64 OpenSSL, so force the vendored build (openssl
-# compiled from source) for that target only. Other targets use their native TLS
-# backend (SChannel on Windows, Secure Transport on macOS) or the system library.
-[target.aarch64-unknown-linux-gnu.dependencies]
-openssl-sys = { version = "0.9", features = ["vendored"] }
-
-[features]
-default = []
-parallel = ["rayon"]
-
-[[bin]]
-name = "city3dstac"
-path = "src/main.rs"
-
-[lib]
-name = "city3d_stac"
-path = "src/lib.rs"
+city3d-stac-types = { path = "crates/city3d-stac-types" }
 
 [profile.release]
 lto = true

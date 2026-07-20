@@ -1,0 +1,20 @@
+[package]
+name = "city3d-stac-types"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Types and serialiser for STAC Items describing 3D city models (city3d extension)"
+keywords = ["stac", "cityjson", "3d", "gis", "geospatial"]
+categories = ["science::geo"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+indexmap.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+hex.workspace = true
+proj4rs.workspace = true
