@@ -6,6 +6,7 @@
 
 use crate::metadata::{AttributeDefinition, BBox3D};
 use crate::stac::CityObjectsCount;
+use city3d_stac_types::stac::types::Item;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
@@ -30,8 +31,8 @@ pub struct ItemMetadata {
 }
 
 impl ItemMetadata {
-    /// Extract minimal metadata from a stac::Item
-    pub fn from_item(item: &stac::Item) -> Self {
+    /// Extract minimal metadata from an [`Item`]
+    pub fn from_item(item: &Item) -> Self {
         let props = &item.properties.additional_fields;
 
         let get_string = |key: &str| -> Option<String> {
@@ -75,11 +76,7 @@ impl ItemMetadata {
             })
         });
 
-        // Convert Bbox enum to Vec<f64> for storage
-        let bbox_vec = item.bbox.map(|b| {
-            let v: Vec<f64> = b.into();
-            v
-        });
+        let bbox_vec = item.bbox.clone();
 
         // Extract file:size from the data asset (STAC File Extension fields live on assets)
         let file_size = item
@@ -109,7 +106,7 @@ impl ItemMetadata {
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
 
-        let item: stac::Item = serde_json::from_str(&content)
+        let item: Item = serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
 
         Ok(Self::from_item(&item))
@@ -284,9 +281,9 @@ mod tests {
     use super::*;
     use serde_json::Value;
 
-    fn create_test_item() -> stac::Item {
-        let mut item = stac::Item::new("test-item");
-        item.bbox = Some(vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0].try_into().unwrap());
+    fn create_test_item() -> Item {
+        let mut item = Item::new("test-item");
+        item.bbox = Some(vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0]);
         item.properties.datetime = Some("2023-01-01T00:00:00Z".parse().unwrap());
         item.properties.additional_fields.insert(
             "city3d:version".to_string(),
@@ -316,13 +313,14 @@ mod tests {
             .additional_fields
             .insert("city3d:semantic_surfaces".to_string(), Value::Bool(true));
 
-        let mut asset = stac::Asset::new("./data.json");
+        let mut asset = city3d_stac_types::stac::types::Asset::new("./data.json");
         asset
             .additional_fields
             .insert("file:size".to_string(), Value::Number(1000.into()));
         item.assets.insert("data".to_string(), asset);
 
-        item.links.push(stac::Link::self_("./item.json"));
+        item.links
+            .push(city3d_stac_types::stac::types::Link::self_("./item.json"));
 
         item
     }
@@ -406,8 +404,8 @@ mod tests {
         );
 
         // Add second item with different values
-        let mut item2 = stac::Item::new("test-item-2");
-        item2.bbox = Some(vec![5.0, 5.0, 5.0, 20.0, 20.0, 20.0].try_into().unwrap());
+        let mut item2 = Item::new("test-item-2");
+        item2.bbox = Some(vec![5.0, 5.0, 5.0, 20.0, 20.0, 20.0]);
         item2.properties.datetime = Some("2023-01-01T00:00:00Z".parse().unwrap());
         item2.properties.additional_fields.insert(
             "city3d:version".to_string(),

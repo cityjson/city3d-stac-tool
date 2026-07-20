@@ -4,6 +4,7 @@
 //! as rows in a GeoParquet file following the stac-geoparquet spec.
 
 use crate::error::Result;
+use crate::stac::{interop, StacItem};
 use std::path::Path;
 
 /// Write STAC items as a GeoParquet file.
@@ -12,7 +13,7 @@ use std::path::Path;
 /// stac-geoparquet metadata embedded in the Parquet file metadata.
 /// Collection metadata is also embedded.
 pub fn write_geoparquet(
-    items: &[stac::Item],
+    items: &[StacItem],
     collection: &stac::Collection,
     output_path: &Path,
 ) -> Result<()> {
@@ -20,13 +21,19 @@ pub fn write_geoparquet(
         return Ok(());
     }
 
+    // The upstream writer is the only consumer of the upstream Item model.
+    let upstream: Vec<stac::Item> = items
+        .iter()
+        .map(interop::to_upstream)
+        .collect::<Result<_>>()?;
+
     let file = std::fs::File::create(output_path)?;
     let writer_options = stac::geoparquet::WriterOptions::new()
         .with_compression(stac::geoparquet::Compression::SNAPPY);
 
     stac::geoparquet::WriterBuilder::new(file)
         .writer_options(writer_options)
-        .build(items.to_vec())
+        .build(upstream)
         .map_err(|e| {
             crate::error::CityJsonStacError::StacError(format!("GeoParquet encode error: {e}"))
         })?
@@ -46,11 +53,11 @@ pub fn write_geoparquet(
 mod tests {
     use super::*;
 
-    fn make_test_item(id: &str, bbox: Vec<f64>) -> stac::Item {
-        let mut item = stac::Item::new(id);
-        item.bbox = Some(bbox.try_into().unwrap());
+    fn make_test_item(id: &str, bbox: Vec<f64>) -> StacItem {
+        let mut item = StacItem::new(id);
+        let bb = bbox.clone();
+        item.bbox = Some(bbox);
 
-        let bb: Vec<f64> = item.bbox.unwrap().into();
         let geometry = serde_json::json!({
             "type": "Polygon",
             "coordinates": [[
@@ -61,7 +68,7 @@ mod tests {
                 [bb[0], bb[1]],
             ]]
         });
-        item.geometry = serde_json::from_value(geometry).ok();
+        item.geometry = Some(geometry);
 
         item.properties.datetime = Some("2024-01-15T12:00:00Z".parse().unwrap());
         item.properties
@@ -71,16 +78,15 @@ mod tests {
             .additional_fields
             .insert("city3d:city_objects".to_string(), serde_json::json!(42));
 
-        let mut asset = stac::Asset::new("./data.city.json");
-        asset.r#type = Some("application/city+json".to_string());
+        let mut asset = crate::stac::ItemAssetEntry::new("./data.city.json");
+        asset.media_type = Some("application/city+json".to_string());
         asset.roles = vec!["data".to_string()];
         item.assets.insert("data".to_string(), asset);
 
-        item.extensions =
-            vec!["https://cityjson.github.io/stac-city3d/v0.2.0/schema.json".to_string()];
+        item.extensions = vec![city3d_stac_types::extensions::CITY3D_EXTENSION.to_string()];
 
         item.links
-            .push(stac::Link::self_(format!("./{id}_item.json")));
+            .push(crate::stac::ItemLink::self_(format!("./{id}_item.json")));
 
         item
     }

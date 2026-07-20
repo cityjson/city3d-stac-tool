@@ -39,8 +39,7 @@ mod e2e_single_file_tests {
 
         // Validate bbox
         assert!(item.bbox.is_some());
-        let bbox = item.bbox.unwrap();
-        let bb: Vec<f64> = bbox.into();
+        let bb: Vec<f64> = item.bbox.clone().unwrap();
         assert_eq!(bb.len(), 6);
 
         // Validate geometry
@@ -338,8 +337,7 @@ mod e2e_workflow_tests {
         // Verify bbox is transformed to WGS84 (lon/lat coordinates)
         // The source data is in EPSG:7415 (RD New), so the bbox should now be
         // in WGS84 with longitude/latitude values reasonable for Delft, Netherlands
-        let item_bbox = item.bbox.as_ref().unwrap();
-        let bb: Vec<f64> = (*item_bbox).into();
+        let bb: Vec<f64> = item.bbox.clone().unwrap();
         assert_eq!(bb.len(), 6);
 
         // Delft is approximately at lon 4.3, lat 52.0
@@ -510,7 +508,7 @@ mod e2e_zip_file_tests {
         // Validate asset has application/zip media type
         assert!(item.assets.contains_key("data"));
         let data_asset = &item.assets["data"];
-        assert_eq!(data_asset.r#type, Some("application/zip".to_string()));
+        assert_eq!(data_asset.media_type, Some("application/zip".to_string()));
     }
 
     #[test]

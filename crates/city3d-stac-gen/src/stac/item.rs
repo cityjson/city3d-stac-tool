@@ -5,6 +5,8 @@ use crate::metadata::BBox3D;
 use crate::metadata::CRS;
 use crate::reader::CityModelMetadataReader;
 use chrono::{DateTime, Utc};
+use city3d_stac_types::extensions::{CITY3D_EXTENSION, FILE_EXTENSION, PROJECTION_EXTENSION};
+use city3d_stac_types::stac::types::{Asset, Item, Link};
 use city3d_stac_types::stac::City3dProperties;
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -61,8 +63,8 @@ pub struct StacItemBuilder {
     end_datetime: Option<DateTime<Utc>>,
     title: Option<String>,
     description: Option<String>,
-    assets: IndexMap<String, stac::Asset>,
-    links: Vec<stac::Link>,
+    assets: IndexMap<String, Asset>,
+    links: Vec<Link>,
     /// Track if File Extension is used (for stac_extensions list)
     uses_file_extension: bool,
     /// Collection ID (set when item belongs to a collection)
@@ -199,8 +201,8 @@ impl StacItemBuilder {
         file_size: Option<u64>,
         file_checksum: Option<String>,
     ) -> Self {
-        let mut asset = stac::Asset::new(href.into());
-        asset.r#type = Some(media_type.to_string());
+        let mut asset = Asset::new(href.into());
+        asset.media_type = Some(media_type.to_string());
         asset.title = Some("3D city model data".to_string());
         asset.roles = vec!["data".to_string()];
 
@@ -223,26 +225,26 @@ impl StacItemBuilder {
     }
 
     /// Add a custom asset
-    pub fn asset(mut self, key: impl Into<String>, asset: stac::Asset) -> Self {
+    pub fn asset(mut self, key: impl Into<String>, asset: Asset) -> Self {
         self.assets.insert(key.into(), asset);
         self
     }
 
     /// Add a link
-    pub fn link(mut self, link: stac::Link) -> Self {
+    pub fn link(mut self, link: Link) -> Self {
         self.links.push(link);
         self
     }
 
     /// Add a self link
     pub fn self_link(mut self, href: impl ToString) -> Self {
-        self.links.push(stac::Link::self_(href));
+        self.links.push(Link::self_(href));
         self
     }
 
     /// Add a parent link
     pub fn parent_link(mut self, href: impl ToString) -> Self {
-        self.links.push(stac::Link::parent(href));
+        self.links.push(Link::parent(href));
         self
     }
 
@@ -254,13 +256,13 @@ impl StacItemBuilder {
 
     /// Add a collection link
     pub fn collection_link(mut self, href: impl ToString) -> Self {
-        self.links.push(stac::Link::collection(href));
+        self.links.push(Link::collection(href));
         self
     }
 
     /// Build the STAC Item
-    pub fn build(self) -> Result<stac::Item> {
-        let mut item = stac::Item::new(&self.id);
+    pub fn build(self) -> Result<Item> {
+        let mut item = Item::new(&self.id);
 
         // Set datetime fields
         item.properties.datetime = self.datetime;
@@ -272,38 +274,21 @@ impl StacItemBuilder {
         // Extension properties go in properties.additional_fields
         item.properties.additional_fields = self.properties;
 
-        // Set bbox
-        if let Some(bbox_vec) = self.bbox {
-            item.bbox = bbox_vec.try_into().ok();
-        }
-
-        // Set geometry
-        if let Some(geom_value) = self.geometry {
-            item.geometry = serde_json::from_value(geom_value).ok();
-        }
-
-        // Set assets
+        item.bbox = self.bbox;
+        item.geometry = self.geometry;
         item.assets = self.assets;
-
-        // Set collection
         item.collection = self.collection_id;
-
-        // Set links
         item.links = self.links;
 
         // Build stac_extensions list dynamically
-        let mut stac_extensions =
-            vec!["https://cityjson.github.io/stac-city3d/v0.2.0/schema.json".to_string()];
+        let mut stac_extensions = vec![CITY3D_EXTENSION.to_string()];
 
         if item.properties.additional_fields.contains_key("proj:code") {
-            stac_extensions.push(
-                "https://stac-extensions.github.io/projection/v2.0.0/schema.json".to_string(),
-            );
+            stac_extensions.push(PROJECTION_EXTENSION.to_string());
         }
 
         if self.uses_file_extension {
-            stac_extensions
-                .push("https://stac-extensions.github.io/file/v2.1.0/schema.json".to_string());
+            stac_extensions.push(FILE_EXTENSION.to_string());
         }
 
         item.extensions = stac_extensions;
@@ -424,8 +409,8 @@ impl StacItemBuilder {
         builder = builder.data_asset(href.clone(), media_type, file_size, file_checksum);
 
         // Add city-model relation link (per STAC 3D City Models Extension)
-        builder =
-            builder.link(stac::Link::new(&href, "city-model").r#type(Some(media_type.to_string())));
+        builder = builder
+            .link(Link::new(&href, "city-model").with_media_type(Some(media_type.to_string())));
 
         Ok(builder)
     }
@@ -523,8 +508,8 @@ impl StacItemBuilder {
         builder = builder.data_asset(href.clone(), media_type, file_size, file_checksum);
 
         // Add city-model relation link (per STAC 3D City Models Extension)
-        builder =
-            builder.link(stac::Link::new(&href, "city-model").r#type(Some(media_type.to_string())));
+        builder = builder
+            .link(Link::new(&href, "city-model").with_media_type(Some(media_type.to_string())));
 
         Ok(builder)
     }

@@ -4,6 +4,9 @@ use crate::error::{CityJsonStacError, Result};
 use crate::metadata::BBox3D;
 use crate::reader::CityModelMetadataReader;
 use chrono::{DateTime, Utc};
+use city3d_stac_types::extensions::{
+    CITY3D_EXTENSION, FILE_EXTENSION, ITEM_ASSETS_EXTENSION, PROJECTION_EXTENSION,
+};
 use indexmap::IndexMap;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -428,12 +431,12 @@ impl StacCollectionBuilder {
     }
 
     /// Aggregate metadata from pre-parsed STAC items
-    pub fn aggregate_from_items(mut self, items: &[stac::Item]) -> Result<Self> {
+    pub fn aggregate_from_items(mut self, items: &[crate::stac::StacItem]) -> Result<Self> {
         if !items.is_empty() {
             self.has_items = true;
         }
         // Helper to extract string from item properties
-        fn get_string(item: &stac::Item, key: &str) -> Option<String> {
+        fn get_string(item: &crate::stac::StacItem, key: &str) -> Option<String> {
             item.properties
                 .additional_fields
                 .get(key)
@@ -442,7 +445,7 @@ impl StacCollectionBuilder {
         }
 
         // Helper to extract string array from item properties
-        fn get_string_array(item: &stac::Item, key: &str) -> Vec<String> {
+        fn get_string_array(item: &crate::stac::StacItem, key: &str) -> Vec<String> {
             item.properties
                 .additional_fields
                 .get(key)
@@ -455,7 +458,7 @@ impl StacCollectionBuilder {
                 .unwrap_or_default()
         }
 
-        fn get_int(item: &stac::Item, key: &str) -> Option<i64> {
+        fn get_int(item: &crate::stac::StacItem, key: &str) -> Option<i64> {
             item.properties
                 .additional_fields
                 .get(key)
@@ -609,7 +612,7 @@ impl StacCollectionBuilder {
         let parsed_bboxes: Vec<BBox3D> = items
             .iter()
             .filter_map(|item| {
-                let bbox_vec: Vec<f64> = item.bbox?.into();
+                let bbox_vec: Vec<f64> = item.bbox.clone()?;
                 if bbox_vec.len() == 6 {
                     Some(BBox3D::new(
                         bbox_vec[0],
@@ -684,13 +687,10 @@ impl StacCollectionBuilder {
         collection.assets = self.assets;
 
         // Build stac_extensions list
-        let mut stac_extensions =
-            vec!["https://cityjson.github.io/stac-city3d/v0.2.0/schema.json".to_string()];
+        let mut stac_extensions = vec![CITY3D_EXTENSION.to_string()];
 
         if self.summaries.contains_key("proj:code") {
-            stac_extensions.push(
-                "https://stac-extensions.github.io/projection/v2.0.0/schema.json".to_string(),
-            );
+            stac_extensions.push(PROJECTION_EXTENSION.to_string());
         }
 
         // Note: city3d:city_objects statistics (min/max/total) are defined by the
@@ -738,14 +738,10 @@ impl StacCollectionBuilder {
             collection
                 .item_assets
                 .insert("data".to_string(), item_asset);
-            stac_extensions.push(
-                "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json".to_string(),
-            );
+            stac_extensions.push(ITEM_ASSETS_EXTENSION.to_string());
         } else if !self.item_assets.is_empty() {
             collection.item_assets = self.item_assets;
-            stac_extensions.push(
-                "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json".to_string(),
-            );
+            stac_extensions.push(ITEM_ASSETS_EXTENSION.to_string());
         }
 
         // Add File Extension if file:size or file:checksum is used on any
@@ -756,8 +752,7 @@ impl StacCollectionBuilder {
                 || a.additional_fields.contains_key("file:checksum")
         });
         if has_file_props_on_assets || self.has_items {
-            stac_extensions
-                .push("https://stac-extensions.github.io/file/v2.1.0/schema.json".to_string());
+            stac_extensions.push(FILE_EXTENSION.to_string());
         }
 
         collection.extensions = stac_extensions;
@@ -956,9 +951,9 @@ mod tests {
 
     #[test]
     fn test_collection_file_size_summary_from_items() {
-        let mut item = stac::Item::new("i1");
-        item.bbox = Some(vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0].try_into().unwrap());
-        let mut asset = stac::Asset::new("./data.json");
+        let mut item = crate::stac::StacItem::new("i1");
+        item.bbox = Some(vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0]);
+        let mut asset = crate::stac::ItemAssetEntry::new("./data.json");
         asset
             .additional_fields
             .insert("file:size".to_string(), Value::Number(2048.into()));

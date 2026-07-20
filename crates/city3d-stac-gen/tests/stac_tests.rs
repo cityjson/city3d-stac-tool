@@ -40,8 +40,7 @@ mod stac_item_builder_tests {
             .expect("Failed to build item");
 
         assert!(item.bbox.is_some());
-        let stac_bbox = item.bbox.unwrap();
-        let bb: Vec<f64> = stac_bbox.into();
+        let bb: Vec<f64> = item.bbox.clone().unwrap();
         assert_eq!(bb.len(), 6);
         assert_eq!(bb[0], 0.0);
         assert_eq!(bb[5], 10.0);
@@ -100,7 +99,7 @@ mod stac_item_builder_tests {
         assert!(item.assets.contains_key("data"));
         let asset = &item.assets["data"];
         assert_eq!(asset.href, "./data.city.json");
-        assert_eq!(asset.r#type, Some("application/city+json".to_string()));
+        assert_eq!(asset.media_type, Some("application/city+json".to_string()));
     }
 
     #[test]
@@ -462,7 +461,7 @@ mod stac_collection_aggregate_from_items_tests {
         epsg: Option<i64>,
         bbox: Option<Vec<f64>>,
     ) -> StacItem {
-        let mut item = stac::Item::new(id);
+        let mut item = StacItem::new(id);
 
         // Set datetime
         item.properties.datetime = Some("2024-01-01T00:00:00Z".parse().unwrap());
@@ -499,9 +498,7 @@ mod stac_collection_aggregate_from_items_tests {
         }
 
         // Set bbox
-        if let Some(bbox_vec) = bbox {
-            item.bbox = bbox_vec.try_into().ok();
-        }
+        item.bbox = bbox;
 
         item
     }
@@ -612,10 +609,10 @@ mod stac_collection_aggregate_from_items_tests {
 
     #[test]
     fn test_aggregate_handles_missing_properties() {
-        // Item with minimal properties - use stac::Item::new
-        let mut item = stac::Item::new("minimal-item");
+        // Item with minimal properties
+        let mut item = StacItem::new("minimal-item");
         item.properties.datetime = Some("2024-01-01T00:00:00Z".parse().unwrap());
-        item.bbox = vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0].try_into().ok();
+        item.bbox = Some(vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0]);
 
         // Should not panic
         let collection = StacCollectionBuilder::new("test")
