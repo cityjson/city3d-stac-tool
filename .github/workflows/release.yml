@@ -48,12 +48,26 @@ jobs:
           LEVEL: ${{ inputs.level }}
         run: |
           set -euo pipefail
+          # Both crates release in lockstep: every release bumps
+          # city3d-stac-types by the same semver level as city3d-stac-gen.
+          # `cargo set-version --bump` (cargo-edit) also rewrites the
+          # `version` requirement on the workspace-level city3d-stac-types
+          # dependency (root Cargo.toml) to match the newly bumped types
+          # version — required because `cargo package` refuses to publish a
+          # path dependency that has no version requirement.
           cargo set-version --bump "$LEVEL" -p city3d-stac-gen
+          cargo set-version --bump "$LEVEL" -p city3d-stac-types
+
+          # Regenerate Cargo.lock to match the manifest changes above.
+          cargo check --workspace
+
           VERSION=$(cargo metadata --format-version 1 --no-deps \
             | jq -r '.packages[] | select(.name == "city3d-stac-gen") | .version')
+          TYPES_VERSION=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name == "city3d-stac-types") | .version')
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Bumped to ${VERSION}"
+          echo "Bumped city3d-stac-gen to ${VERSION}, city3d-stac-types to ${TYPES_VERSION}"
 
       - name: Commit, tag and push
         env:
@@ -62,7 +76,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
+          git add Cargo.toml Cargo.lock crates/city3d-stac-types/Cargo.toml crates/city3d-stac-gen/Cargo.toml
           git commit -m "chore: release ${TAG}"
           git tag -a "${TAG}" -m "Release ${TAG}"
           git push origin main
@@ -142,7 +156,19 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Publish
+      # city3d-stac-gen depends on city3d-stac-types with both a `path` and
+      # a `version` requirement (see root Cargo.toml). crates.io requires
+      # the dependency to already exist there before a crate that depends
+      # on it can be published, so types must publish first. A short wait
+      # after publishing types gives crates.io's index time to catch up
+      # before gen's publish tries to resolve it.
+      - name: Publish city3d-stac-types
+        run: cargo publish --locked -p city3d-stac-types --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io index
+        run: sleep 30
+
+      - name: Publish city3d-stac-gen
         run: cargo publish --locked -p city3d-stac-gen --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   # Create the GitHub Release only after crates.io publish and builds succeed.
