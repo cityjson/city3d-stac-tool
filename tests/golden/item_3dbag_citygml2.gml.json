@@ -1,0 +1,259 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://cityjson.github.io/stac-city3d/v0.2.0/schema.json",
+    "https://stac-extensions.github.io/projection/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json"
+  ],
+  "id": "3dbag_citygml2",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          4.3607136804364615,
+          51.99711436213952
+        ],
+        [
+          4.378046279841342,
+          51.99711436213952
+        ],
+        [
+          4.378046279841342,
+          52.00785412015508
+        ],
+        [
+          4.3607136804364615,
+          52.00785412015508
+        ],
+        [
+          4.3607136804364615,
+          51.99711436213952
+        ]
+      ]
+    ]
+  },
+  "bbox": [
+    4.3607136804364615,
+    51.99711436213952,
+    -2.462002,
+    4.378046279841342,
+    52.00785412015508,
+    94.801003
+  ],
+  "properties": {
+    "datetime": null,
+    "city3d:version": "2.0",
+    "city3d:city_objects": 1110,
+    "city3d:lods": [
+      "0",
+      "1",
+      "2"
+    ],
+    "city3d:co_types": [
+      "Building"
+    ],
+    "city3d:attributes": [
+      {
+        "name": "b3_dak_type",
+        "type": "String"
+      },
+      {
+        "name": "b3_h_dak_50p",
+        "type": "String"
+      },
+      {
+        "name": "b3_h_dak_70p",
+        "type": "String"
+      },
+      {
+        "name": "b3_h_dak_max",
+        "type": "String"
+      },
+      {
+        "name": "b3_h_dak_min",
+        "type": "String"
+      },
+      {
+        "name": "b3_h_maaiveld",
+        "type": "String"
+      },
+      {
+        "name": "b3_kas_warenhuis",
+        "type": "String"
+      },
+      {
+        "name": "b3_mutatie_ahn3_ahn4",
+        "type": "String"
+      },
+      {
+        "name": "b3_nodata_fractie_ahn3",
+        "type": "String"
+      },
+      {
+        "name": "b3_nodata_fractie_ahn4",
+        "type": "String"
+      },
+      {
+        "name": "b3_nodata_radius_ahn3",
+        "type": "String"
+      },
+      {
+        "name": "b3_nodata_radius_ahn4",
+        "type": "String"
+      },
+      {
+        "name": "b3_puntdichtheid_ahn3",
+        "type": "String"
+      },
+      {
+        "name": "b3_puntdichtheid_ahn4",
+        "type": "String"
+      },
+      {
+        "name": "b3_pw_bron",
+        "type": "String"
+      },
+      {
+        "name": "b3_pw_datum",
+        "type": "String"
+      },
+      {
+        "name": "b3_pw_selectie_reden",
+        "type": "String"
+      },
+      {
+        "name": "b3_reconstructie_onvolledig",
+        "type": "String"
+      },
+      {
+        "name": "b3_rmse_lod12",
+        "type": "String"
+      },
+      {
+        "name": "b3_rmse_lod13",
+        "type": "String"
+      },
+      {
+        "name": "b3_rmse_lod22",
+        "type": "String"
+      },
+      {
+        "name": "b3_val3dity_lod12",
+        "type": "String"
+      },
+      {
+        "name": "b3_val3dity_lod13",
+        "type": "String"
+      },
+      {
+        "name": "b3_val3dity_lod22",
+        "type": "String"
+      },
+      {
+        "name": "b3_volume_lod12",
+        "type": "String"
+      },
+      {
+        "name": "b3_volume_lod13",
+        "type": "String"
+      },
+      {
+        "name": "b3_volume_lod22",
+        "type": "String"
+      },
+      {
+        "name": "begingeldigheid",
+        "type": "String"
+      },
+      {
+        "name": "documentdatum",
+        "type": "String"
+      },
+      {
+        "name": "documentnummer",
+        "type": "String"
+      },
+      {
+        "name": "eindgeldigheid",
+        "type": "String"
+      },
+      {
+        "name": "eindregistratie",
+        "type": "String"
+      },
+      {
+        "name": "geconstateerd",
+        "type": "String"
+      },
+      {
+        "name": "identificatie",
+        "type": "String"
+      },
+      {
+        "name": "on_footprint_edge",
+        "type": "String"
+      },
+      {
+        "name": "oorspronkelijkbouwjaar",
+        "type": "String"
+      },
+      {
+        "name": "status",
+        "type": "String"
+      },
+      {
+        "name": "tijdstipeindregistratielv",
+        "type": "String"
+      },
+      {
+        "name": "tijdstipinactief",
+        "type": "String"
+      },
+      {
+        "name": "tijdstipinactieflv",
+        "type": "String"
+      },
+      {
+        "name": "tijdstipnietbaglv",
+        "type": "String"
+      },
+      {
+        "name": "tijdstipregistratie",
+        "type": "String"
+      },
+      {
+        "name": "tijdstipregistratielv",
+        "type": "String"
+      },
+      {
+        "name": "voorkomenidentificatie",
+        "type": "String"
+      }
+    ],
+    "city3d:semantic_surfaces": true,
+    "city3d:textures": false,
+    "city3d:materials": false,
+    "proj:code": "EPSG:7415"
+  },
+  "links": [
+    {
+      "href": "3dbag_citygml2.gml",
+      "rel": "city-model",
+      "type": "application/gml+xml"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "3dbag_citygml2.gml",
+      "title": "3D city model data",
+      "type": "application/gml+xml",
+      "roles": [
+        "data"
+      ],
+      "file:size": 48473282,
+      "file:checksum": "1220ef4b03e5c51803eeb6fd50688140145ff26bbcb8af367b80255d4db705ced769"
+    }
+  }
+}
