@@ -5,14 +5,14 @@
 //! so that memory usage is O(1) regardless of item count.
 
 use crate::metadata::{AttributeDefinition, BBox3D};
+use crate::stac::types::Item;
 use crate::stac::CityObjectsCount;
-use city3d_stac_types::stac::types::Item;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 
 /// Minimal metadata extracted from a processed item for collection aggregation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ItemMetadata {
     pub id: String,
     pub bbox: Option<Vec<f64>>,
@@ -313,14 +313,14 @@ mod tests {
             .additional_fields
             .insert("city3d:semantic_surfaces".to_string(), Value::Bool(true));
 
-        let mut asset = city3d_stac_types::stac::types::Asset::new("./data.json");
+        let mut asset = crate::stac::types::Asset::new("./data.json");
         asset
             .additional_fields
             .insert("file:size".to_string(), Value::Number(1000.into()));
         item.assets.insert("data".to_string(), asset);
 
         item.links
-            .push(city3d_stac_types::stac::types::Link::self_("./item.json"));
+            .push(crate::stac::types::Link::self_("./item.json"));
 
         item
     }

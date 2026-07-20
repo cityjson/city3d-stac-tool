@@ -6,16 +6,16 @@
 //! crate; [`interop`] bridges the two where an upstream Item is required
 //! (schema validation, GeoParquet).
 
-mod accumulator;
 mod catalog;
 mod collection;
 pub mod geoparquet;
 pub mod interop;
 mod item;
 
-pub use accumulator::{AggregatedSummaries, CollectionAccumulator, ItemMetadata};
 pub use catalog::StacCatalogBuilder;
-pub use city3d_stac_types::stac::{City3dProperties, CityObjectsCount};
+pub use city3d_stac_types::stac::{
+    AggregatedSummaries, City3dProperties, CityObjectsCount, CollectionAccumulator, ItemMetadata,
+};
 pub use collection::StacCollectionBuilder;
 pub use item::StacItemBuilder;
 
