@@ -48,7 +48,7 @@ jobs:
           LEVEL: ${{ inputs.level }}
         run: |
           set -euo pipefail
-          cargo set-version --bump "$LEVEL"
+          cargo set-version --bump "$LEVEL" -p city3d-stac-gen
           VERSION=$(cargo metadata --format-version 1 --no-deps \
             | jq -r '.packages[] | select(.name == "city3d-stac-gen") | .version')
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -143,7 +143,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Publish
-        run: cargo publish --locked --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked -p city3d-stac-gen --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
   # Create the GitHub Release only after crates.io publish and builds succeed.
   create-release:
