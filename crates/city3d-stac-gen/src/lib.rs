@@ -18,14 +18,16 @@
 //!
 //! # fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let reader = get_reader(Path::new("building.json"))?;
+//! let props = city3d_stac::adapter::properties_from_reader(&*reader)?;
 //! let item = StacItemBuilder::new("my-building")
 //!     .bbox(reader.bbox()?)
-//!     .cityjson_metadata(&*reader)?
+//!     .city3d(props)?
 //!     .build()?;
 //! # Ok(())
 //! # }
 //! ```
 
+pub mod adapter;
 pub mod cli;
 pub mod config;
 pub mod error;

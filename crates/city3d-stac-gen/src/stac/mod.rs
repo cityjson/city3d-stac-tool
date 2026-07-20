@@ -9,13 +9,12 @@ mod catalog;
 mod collection;
 pub mod geoparquet;
 mod item;
-mod models;
 
 pub use accumulator::{AggregatedSummaries, CollectionAccumulator, ItemMetadata};
 pub use catalog::StacCatalogBuilder;
+pub use city3d_stac_types::stac::{City3dProperties, CityObjectsCount};
 pub use collection::StacCollectionBuilder;
 pub use item::StacItemBuilder;
-pub use models::CityObjectsCount;
 
 // Re-export upstream stac crate types used throughout the codebase.
 // Type aliases preserve backward compatibility with existing code.

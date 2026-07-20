@@ -344,9 +344,13 @@ mod from_content_schema_tests {
             CityJSONReader::from_content(&content, PathBuf::from("remote_railway.city.json"))
                 .expect("Failed to create reader from content");
 
+        let props = city3d_stac::adapter::properties_from_reader(&reader)
+            .expect("Failed to collect city3d properties");
         let builder = StacItemBuilder::new("remote-railway")
-            .cityjson_metadata(&reader)
-            .expect("Failed to add metadata");
+            .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
+            .city3d(props)
+            .expect("Failed to add metadata")
+            .crs(&reader.crs().unwrap_or_default());
 
         let builder = if let Ok(bbox) = reader.bbox() {
             builder.bbox(bbox).geometry_from_bbox()
@@ -385,9 +389,13 @@ mod from_content_schema_tests {
             CityJSONSeqReader::from_content(&content, PathBuf::from("remote_railway.city.jsonl"))
                 .expect("Failed to create reader from content");
 
+        let props = city3d_stac::adapter::properties_from_reader(&reader)
+            .expect("Failed to collect city3d properties");
         let builder = StacItemBuilder::new("remote-railway-cjseq")
-            .cityjson_metadata(&reader)
-            .expect("Failed to add metadata");
+            .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
+            .city3d(props)
+            .expect("Failed to add metadata")
+            .crs(&reader.crs().unwrap_or_default());
 
         let builder = if let Ok(bbox) = reader.bbox() {
             builder.bbox(bbox).geometry_from_bbox()
@@ -809,12 +817,16 @@ mod remote_url_schema_tests {
             .await
             .expect("Failed to fetch remote reader");
 
+        let props = city3d_stac::adapter::properties_from_reader(reader.as_ref())
+            .expect("Failed to collect city3d properties");
+        let crs = reader.crs().unwrap_or_default();
         let mut builder = StacItemBuilder::new("remote-delft")
-            .cityjson_metadata(reader.as_ref())
-            .expect("Failed to add metadata");
+            .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
+            .city3d(props)
+            .expect("Failed to add metadata")
+            .crs(&crs);
 
         if let Ok(bbox) = reader.bbox() {
-            let crs = reader.crs().unwrap_or_default();
             let wgs84_bbox = bbox
                 .to_wgs84(&crs)
                 .expect("Failed to transform bbox to WGS84");
@@ -848,12 +860,16 @@ mod remote_url_schema_tests {
             .await
             .expect("Failed to fetch remote reader");
 
+        let props = city3d_stac::adapter::properties_from_reader(reader.as_ref())
+            .expect("Failed to collect city3d properties");
+        let crs = reader.crs().unwrap_or_default();
         let mut builder = StacItemBuilder::new("remote-delft-cjseq")
-            .cityjson_metadata(reader.as_ref())
-            .expect("Failed to add metadata");
+            .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
+            .city3d(props)
+            .expect("Failed to add metadata")
+            .crs(&crs);
 
         if let Ok(bbox) = reader.bbox() {
-            let crs = reader.crs().unwrap_or_default();
             let wgs84_bbox = bbox
                 .to_wgs84(&crs)
                 .expect("Failed to transform bbox to WGS84");
@@ -1046,12 +1062,16 @@ mod remote_citygml_schema_tests {
             .await
             .expect("Failed to fetch remote reader");
 
+        let props = city3d_stac::adapter::properties_from_reader(reader.as_ref())
+            .expect("Failed to collect city3d properties");
+        let crs = reader.crs().unwrap_or_default();
         let mut builder = StacItemBuilder::new("remote-citygml2")
-            .cityjson_metadata(reader.as_ref())
-            .expect("Failed to add metadata");
+            .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
+            .city3d(props)
+            .expect("Failed to add metadata")
+            .crs(&crs);
 
         if let Ok(bbox) = reader.bbox() {
-            let crs = reader.crs().unwrap_or_default();
             let wgs84_bbox = bbox
                 .to_wgs84(&crs)
                 .expect("Failed to transform bbox to WGS84");
@@ -1085,12 +1105,16 @@ mod remote_citygml_schema_tests {
             .await
             .expect("Failed to fetch remote reader");
 
+        let props = city3d_stac::adapter::properties_from_reader(reader.as_ref())
+            .expect("Failed to collect city3d properties");
+        let crs = reader.crs().unwrap_or_default();
         let mut builder = StacItemBuilder::new("remote-citygml3")
-            .cityjson_metadata(reader.as_ref())
-            .expect("Failed to add metadata");
+            .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
+            .city3d(props)
+            .expect("Failed to add metadata")
+            .crs(&crs);
 
         if let Ok(bbox) = reader.bbox() {
-            let crs = reader.crs().unwrap_or_default();
             let wgs84_bbox = bbox
                 .to_wgs84(&crs)
                 .expect("Failed to transform bbox to WGS84");

@@ -8,5 +8,6 @@
 
 pub mod error;
 pub mod metadata;
+pub mod stac;
 
 pub use error::{City3dError, Result};

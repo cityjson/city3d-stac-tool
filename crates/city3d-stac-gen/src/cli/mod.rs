@@ -601,7 +601,12 @@ async fn handle_item_command(
 
     // Apply custom options
     if let Some(custom_id) = id {
-        builder = StacItemBuilder::new(custom_id).cityjson_metadata(reader.as_ref())?;
+        let props = crate::adapter::properties_from_reader(reader.as_ref())?;
+        let resolved_crs = StacItemBuilder::resolve_crs(reader.as_ref(), None);
+        builder = StacItemBuilder::new(custom_id)
+            .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
+            .city3d(props)?
+            .crs(&resolved_crs);
 
         if let Ok(bbox) = reader.bbox() {
             let crs = reader.crs().unwrap_or_default();

@@ -5,6 +5,7 @@ use crate::metadata::BBox3D;
 use crate::metadata::CRS;
 use crate::reader::CityModelMetadataReader;
 use chrono::{DateTime, Utc};
+use city3d_stac_types::stac::City3dProperties;
 use indexmap::IndexMap;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -89,7 +90,10 @@ impl StacItemBuilder {
     }
 
     /// Resolve CRS from reader, using the override as fallback when the reader's CRS is unknown.
-    fn resolve_crs(reader: &dyn CityModelMetadataReader, crs_override: Option<&CRS>) -> CRS {
+    pub(crate) fn resolve_crs(
+        reader: &dyn CityModelMetadataReader,
+        crs_override: Option<&CRS>,
+    ) -> CRS {
         let crs = reader.crs().unwrap_or_default();
         if crs.is_known() {
             crs
@@ -148,93 +152,39 @@ impl StacItemBuilder {
         self
     }
 
-    /// Add 3D City Models extension properties from metadata reader
+    /// Add 3D City Models extension properties.
     ///
-    /// Uses the STAC 3D City Models Extension (city3d: prefix)
+    /// Uses the STAC 3D City Models Extension (`city3d:` prefix)
     /// <https://cityjson.github.io/stac-city3d/v0.2.0/schema.json>
-    pub fn cityjson_metadata(mut self, reader: &dyn CityModelMetadataReader) -> Result<Self> {
-        // Extract referenceDate from CityJSON metadata → set as datetime
-        if let Ok(Some(metadata)) = reader.metadata() {
-            if let Some(ref_date) = metadata.get("referenceDate").and_then(|v| v.as_str()) {
-                // referenceDate is typically "YYYY-MM-DD"; convert to RFC3339
-                let datetime_str = if ref_date.contains('T') {
-                    ref_date.to_string()
-                } else {
-                    format!("{ref_date}T00:00:00Z")
-                };
-                self.datetime = datetime_str.parse::<DateTime<Utc>>().ok();
-            }
-        }
-
-        // Add city3d:version
-        if let Ok(version) = reader.version() {
-            self.properties
-                .insert("city3d:version".to_string(), Value::String(version));
-        }
-
-        // Add city3d:city_objects
-        if let Ok(count) = reader.city_object_count() {
-            self.properties.insert(
-                "city3d:city_objects".to_string(),
-                Value::Number(serde_json::Number::from(count)),
-            );
-        }
-
-        // Add city3d:lods as strings to avoid floating-point precision issues
-        if let Ok(lods) = reader.lods() {
-            if !lods.is_empty() {
-                self.properties
-                    .insert("city3d:lods".to_string(), serde_json::to_value(lods)?);
-            }
-        }
-
-        // Add city3d:co_types
-        if let Ok(types) = reader.city_object_types() {
-            if !types.is_empty() {
-                self.properties
-                    .insert("city3d:co_types".to_string(), serde_json::to_value(types)?);
-            }
-        }
-
-        // Add city3d:attributes
-        if let Ok(attrs) = reader.attributes() {
-            if !attrs.is_empty() {
-                self.properties.insert(
-                    "city3d:attributes".to_string(),
-                    serde_json::to_value(attrs)?,
-                );
-            }
-        }
-
-        // Add city3d:semantic_surfaces
-        if let Ok(has_semantic_surfaces) = reader.semantic_surfaces() {
-            self.properties.insert(
-                "city3d:semantic_surfaces".to_string(),
-                Value::Bool(has_semantic_surfaces),
-            );
-        }
-
-        // Add city3d:textures
-        if let Ok(has_textures) = reader.textures() {
-            self.properties
-                .insert("city3d:textures".to_string(), Value::Bool(has_textures));
-        }
-
-        // Add city3d:materials
-        if let Ok(has_materials) = reader.materials() {
-            self.properties
-                .insert("city3d:materials".to_string(), Value::Bool(has_materials));
-        }
-
-        // Add proj:code from CRS (string, as per STAC Projection Extension v2.0.0)
-        if let Ok(crs) = reader.crs() {
-            if let Some(proj_code) = crs.to_stac_proj_code() {
-                self.properties
-                    .insert("proj:code".to_string(), Value::String(proj_code));
-            }
-        }
-
+    pub fn city3d(mut self, props: City3dProperties) -> Result<Self> {
+        props.write_into(&mut self.properties)?;
         Ok(self)
+    }
+
+    /// Set `proj:code` from the dataset CRS (STAC Projection Extension v2.0.0).
+    pub fn crs(mut self, crs: &CRS) -> Self {
+        if let Some(proj_code) = crs.to_stac_proj_code() {
+            self.properties
+                .insert("proj:code".to_string(), Value::String(proj_code));
+        }
+        self
+    }
+
+    /// Set `datetime` from a CityJSON header `metadata` object's
+    /// `referenceDate`, which is typically `YYYY-MM-DD`.
+    pub fn datetime_from_reference_date(mut self, metadata: Option<&Value>) -> Self {
+        if let Some(ref_date) = metadata
+            .and_then(|m| m.get("referenceDate"))
+            .and_then(|v| v.as_str())
+        {
+            let datetime_str = if ref_date.contains('T') {
+                ref_date.to_string()
+            } else {
+                format!("{ref_date}T00:00:00Z")
+            };
+            self.datetime = datetime_str.parse::<DateTime<Utc>>().ok();
+        }
+        self
     }
 
     /// Add a data asset pointing to the source file
@@ -421,7 +371,12 @@ impl StacItemBuilder {
         }
 
         // Add CityJSON metadata
-        builder = builder.cityjson_metadata(reader)?;
+        let props = crate::adapter::properties_from_reader(reader)?;
+        let resolved_crs = Self::resolve_crs(reader, crs_override);
+        builder = builder
+            .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
+            .city3d(props)?
+            .crs(&resolved_crs);
 
         // Get file size and checksum for the asset (File Extension)
         let file_size = std::fs::metadata(file_path).ok().map(|m| m.len());
@@ -512,7 +467,12 @@ impl StacItemBuilder {
         }
 
         // Add CityJSON metadata
-        builder = builder.cityjson_metadata(reader)?;
+        let props = crate::adapter::properties_from_reader(reader)?;
+        let resolved_crs = Self::resolve_crs(reader, crs_override);
+        builder = builder
+            .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
+            .city3d(props)?
+            .crs(&resolved_crs);
 
         // Get file size and checksum for the asset (File Extension)
         let file_size = std::fs::metadata(file_path).ok().map(|m| m.len());
@@ -641,9 +601,13 @@ mod tests {
         let temp_file = create_test_cityjson();
         let reader = CityJSONReader::new(temp_file.path()).unwrap();
 
+        let props = crate::adapter::properties_from_reader(&reader).unwrap();
+        let resolved_crs = StacItemBuilder::resolve_crs(&reader, None);
         let item = StacItemBuilder::new("test-building")
-            .cityjson_metadata(&reader)
+            .datetime_from_reference_date(reader.metadata().unwrap().as_ref())
+            .city3d(props)
             .unwrap()
+            .crs(&resolved_crs)
             .build()
             .unwrap();
 
