@@ -372,6 +372,11 @@ impl StacItemBuilder {
 
         // Add CityJSON metadata
         let props = crate::adapter::properties_from_reader(reader)?;
+        // `proj:code` and the bbox transform above deliberately agree on the
+        // same resolved CRS: both fall back to `crs_override` when the
+        // reader's own CRS is unknown. Do not split them again — a reader
+        // with an unknown CRS plus a supplied override should describe its
+        // own coordinates in `proj:code`, not report them as unprojected.
         let resolved_crs = Self::resolve_crs(reader, crs_override);
         builder = builder
             .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
@@ -468,6 +473,11 @@ impl StacItemBuilder {
 
         // Add CityJSON metadata
         let props = crate::adapter::properties_from_reader(reader)?;
+        // `proj:code` and the bbox transform above deliberately agree on the
+        // same resolved CRS: both fall back to `crs_override` when the
+        // reader's own CRS is unknown. Do not split them again — a reader
+        // with an unknown CRS plus a supplied override should describe its
+        // own coordinates in `proj:code`, not report them as unprojected.
         let resolved_crs = Self::resolve_crs(reader, crs_override);
         builder = builder
             .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
@@ -678,6 +688,54 @@ mod tests {
             .extensions
             .iter()
             .any(|e| e.contains("stac-extensions.github.io/file/")));
+    }
+
+    #[test]
+    fn test_proj_code_matches_bbox_crs_when_reader_crs_unknown() {
+        // Regression test: `proj:code` and the bbox transform must resolve the
+        // same CRS. `railway.city.json` has no `referenceSystem`, so the
+        // reader's own CRS is unknown. With an override supplied, both the
+        // bbox reprojection and `proj:code` should use it — the Item must not
+        // under-describe coordinates it did in fact reproject.
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("data")
+            .join("railway.city.json");
+        let reader = CityJSONReader::new(&path).unwrap();
+        assert!(
+            !reader.crs().unwrap().is_known(),
+            "fixture must have an unknown CRS for this test to be meaningful"
+        );
+
+        let override_crs = CRS::from_epsg(7415);
+        let item = StacItemBuilder::from_file_with_crs_override(
+            &path,
+            &reader,
+            None,
+            None,
+            Some(&override_crs),
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+
+        assert_eq!(
+            item.properties.additional_fields.get("proj:code").unwrap(),
+            &Value::String(override_crs.to_stac_proj_code().unwrap())
+        );
+
+        // Negative control: without an override, an unknown reader CRS
+        // yields no `proj:code` at all.
+        let item_no_override =
+            StacItemBuilder::from_file_with_crs_override(&path, &reader, None, None, None)
+                .unwrap()
+                .build()
+                .unwrap();
+
+        assert!(!item_no_override
+            .properties
+            .additional_fields
+            .contains_key("proj:code"));
     }
 
     #[test]
