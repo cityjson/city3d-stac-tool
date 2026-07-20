@@ -20,6 +20,7 @@ pub use city3d_stac_types::stac::{
 pub use collection::StacCollectionBuilder;
 pub use from_file::{
     item_from_file, item_from_file_with_crs_override, item_from_file_with_format_suffix_and_crs,
+    item_metadata_from_file,
 };
 
 // Item documents: this project's own model. `Asset` and `Link` are the

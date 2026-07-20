@@ -9,7 +9,6 @@ use crate::stac::types::Item;
 use crate::stac::CityObjectsCount;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::path::Path;
 
 /// Minimal metadata extracted from a processed item for collection aggregation.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -99,17 +98,6 @@ impl ItemMetadata {
             proj_code: get_string("proj:code"),
             file_size,
         }
-    }
-
-    /// Read metadata from an existing item JSON file on disk
-    pub fn from_file(path: &Path) -> Result<Self, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-
-        let item: Item = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
-
-        Ok(Self::from_item(&item))
     }
 }
 

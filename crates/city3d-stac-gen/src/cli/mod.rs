@@ -1817,7 +1817,7 @@ async fn process_collection_logic(
                         item_filename
                     ));
 
-                    match ItemMetadata::from_file(&item_path) {
+                    match crate::stac::item_metadata_from_file(&item_path) {
                         Ok(metadata) => {
                             let item_href = format!("./items/{item_filename}");
                             let title = file_path
@@ -1840,7 +1840,7 @@ async fn process_collection_logic(
                                 pb.inc(1);
                                 return ItemResult::Error {
                                     source: item_filename,
-                                    error: e,
+                                    error: e.to_string(),
                                 };
                             } else {
                                 pb.inc(1);
