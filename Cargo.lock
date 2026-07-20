@@ -805,6 +805,7 @@ dependencies = [
  "chrono",
  "hex",
  "indexmap 2.13.1",
+ "jsonschema 0.26.2",
  "proj4rs",
  "serde",
  "serde_json",

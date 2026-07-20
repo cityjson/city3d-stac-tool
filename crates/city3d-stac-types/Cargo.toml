@@ -21,3 +21,4 @@ proj4rs.workspace = true
 
 [dev-dependencies]
 tempfile = "3.10"
+jsonschema = "0.26"
