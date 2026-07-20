@@ -84,7 +84,7 @@ mod stac_item_builder_tests {
             .expect("Failed to build item");
 
         // The builder does not set a default datetime; it remains None
-        // unless explicitly set via .datetime() or .cityjson_metadata().
+        // unless explicitly set via .datetime() or .datetime_from_reference_date().
         // Verify the datetime field is serialized (as null when not set).
         let parsed = serde_json::to_value(&item).unwrap();
         assert!(parsed["properties"].get("datetime").is_some());
@@ -121,9 +121,8 @@ mod stac_item_builder_tests {
     }
 
     #[test]
-    fn test_item_builder_without_cityjson_metadata() {
-        // Without cityjson_metadata(), build should still succeed
-        // Without cityjson_metadata(), build should still succeed
+    fn test_item_builder_without_city3d_properties() {
+        // Without city3d(), build should still succeed
         let result = StacItemBuilder::new("test-id").build();
         assert!(result.is_ok());
     }
