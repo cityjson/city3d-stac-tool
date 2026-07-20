@@ -27,6 +27,29 @@ fn item_serialises_with_stac_field_names_and_order() {
         json["stac_extensions"][0],
         "https://cityjson.github.io/stac-city3d/v0.2.0/schema.json"
     );
+
+    // Key order is load-bearing for the golden fixtures elsewhere in this
+    // workspace, and is only insertion-ordered because `serde_json` is built
+    // with `preserve_order`. Without that feature `serde_json::Map` falls
+    // back to a `BTreeMap`, which would alphabetise these keys instead
+    // (assets, bbox, geometry, id, links, properties, stac_extensions,
+    // stac_version, type) — this assertion is what catches that regression.
+    let keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+    assert_eq!(
+        keys,
+        vec![
+            "type",
+            "stac_version",
+            "stac_extensions",
+            "id",
+            "geometry",
+            "bbox",
+            "properties",
+            "links",
+            "assets",
+        ],
+        "top-level key order must match declaration order in Item (requires serde_json/preserve_order)"
+    );
 }
 
 #[test]
