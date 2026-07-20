@@ -7,6 +7,7 @@
 //! without inheriting a CLI's dependency tree.
 
 pub mod error;
+pub mod extensions;
 pub mod metadata;
 pub mod stac;
 
