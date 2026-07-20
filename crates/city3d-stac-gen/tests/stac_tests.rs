@@ -360,39 +360,45 @@ mod stac_collection_aggregate_tests {
     }
 }
 
+// `city3d_stac::stac::Link`/`Asset` are this project's own document-model
+// types (`city3d-stac-types`), not the upstream `stac` crate's — see
+// `src/stac/mod.rs`. Exercise the local API: `media_type` (not `r#type`)
+// and the `with_*` builder methods, plus direct field assignment for
+// fields with no builder method.
 mod link_tests {
     use city3d_stac::stac::Link;
 
     #[test]
     fn test_link_new() {
-        // stac::Link::new takes (href, rel)
         let link = Link::new("./item.json", "self");
         assert_eq!(link.rel, "self");
         assert_eq!(link.href, "./item.json");
-        assert!(link.r#type.is_none());
+        assert!(link.media_type.is_none());
         assert!(link.title.is_none());
     }
 
     #[test]
     fn test_link_with_type() {
-        let link = Link::new("./item.json", "self").r#type(Some("application/json".to_string()));
-        assert_eq!(link.r#type, Some("application/json".to_string()));
+        let link =
+            Link::new("./item.json", "self").with_media_type(Some("application/json".to_string()));
+        assert_eq!(link.media_type, Some("application/json".to_string()));
     }
 
     #[test]
     fn test_link_with_title() {
-        let link = Link::new("./item.json", "item").title(Some("Building Item".to_string()));
+        let mut link = Link::new("./item.json", "item");
+        link.title = Some("Building Item".to_string());
         assert_eq!(link.title, Some("Building Item".to_string()));
     }
 
     #[test]
     fn test_link_builder_chain() {
-        let link = Link::new("./collection.json", "collection")
-            .r#type(Some("application/json".to_string()))
-            .title(Some("Parent Collection".to_string()));
+        let mut link = Link::new("./collection.json", "collection")
+            .with_media_type(Some("application/json".to_string()));
+        link.title = Some("Parent Collection".to_string());
 
         assert_eq!(link.rel, "collection");
-        assert_eq!(link.r#type, Some("application/json".to_string()));
+        assert_eq!(link.media_type, Some("application/json".to_string()));
         assert_eq!(link.title, Some("Parent Collection".to_string()));
     }
 }
@@ -404,42 +410,38 @@ mod asset_tests {
     fn test_asset_new() {
         let asset = Asset::new("./data.json");
         assert_eq!(asset.href, "./data.json");
-        assert!(asset.r#type.is_none());
+        assert!(asset.media_type.is_none());
         assert!(asset.title.is_none());
-        // roles is now Vec<String>, not Option<Vec<String>>
         assert!(asset.roles.is_empty());
     }
 
     #[test]
     fn test_asset_with_type() {
-        let mut asset = Asset::new("./data.json");
-        asset.r#type = Some("application/json".to_string());
-        assert_eq!(asset.r#type, Some("application/json".to_string()));
+        let asset = Asset::new("./data.json").with_media_type("application/json");
+        assert_eq!(asset.media_type, Some("application/json".to_string()));
     }
 
     #[test]
     fn test_asset_with_title() {
-        let mut asset = Asset::new("./data.json");
-        asset.title = Some("CityJSON Data".to_string());
+        let asset = Asset::new("./data.json").with_title("CityJSON Data");
         assert_eq!(asset.title, Some("CityJSON Data".to_string()));
     }
 
     #[test]
     fn test_asset_with_roles() {
-        let mut asset = Asset::new("./data.json");
-        asset.roles = vec!["data".to_string()];
+        let asset = Asset::new("./data.json").with_roles(["data".to_string()]);
         assert_eq!(asset.roles, vec!["data".to_string()]);
     }
 
     #[test]
     fn test_asset_builder_chain() {
-        let mut asset = Asset::new("./building.json");
-        asset.r#type = Some("application/json".to_string());
-        asset.title = Some("Building Data".to_string());
-        asset.roles = vec!["data".to_string(), "primary".to_string()];
+        let asset = Asset::new("./building.json")
+            .with_media_type("application/json")
+            .with_title("Building Data")
+            .with_roles(["data".to_string(), "primary".to_string()]);
 
         assert_eq!(asset.href, "./building.json");
-        assert_eq!(asset.r#type, Some("application/json".to_string()));
+        assert_eq!(asset.media_type, Some("application/json".to_string()));
         assert_eq!(asset.title, Some("Building Data".to_string()));
         assert_eq!(asset.roles, vec!["data".to_string(), "primary".to_string()]);
     }

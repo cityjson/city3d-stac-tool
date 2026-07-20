@@ -78,7 +78,7 @@ mod tests {
             .additional_fields
             .insert("city3d:city_objects".to_string(), serde_json::json!(42));
 
-        let mut asset = crate::stac::ItemAssetEntry::new("./data.city.json");
+        let mut asset = crate::stac::Asset::new("./data.city.json");
         asset.media_type = Some("application/city+json".to_string());
         asset.roles = vec!["data".to_string()];
         item.assets.insert("data".to_string(), asset);
@@ -86,7 +86,7 @@ mod tests {
         item.extensions = vec![city3d_stac_types::extensions::CITY3D_EXTENSION.to_string()];
 
         item.links
-            .push(crate::stac::ItemLink::self_(format!("./{id}_item.json")));
+            .push(crate::stac::Link::self_(format!("./{id}_item.json")));
 
         item
     }

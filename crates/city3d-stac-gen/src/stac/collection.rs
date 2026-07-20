@@ -953,7 +953,7 @@ mod tests {
     fn test_collection_file_size_summary_from_items() {
         let mut item = crate::stac::StacItem::new("i1");
         item.bbox = Some(vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0]);
-        let mut asset = crate::stac::ItemAssetEntry::new("./data.json");
+        let mut asset = crate::stac::Asset::new("./data.json");
         asset
             .additional_fields
             .insert("file:size".to_string(), Value::Number(2048.into()));

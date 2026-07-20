@@ -324,9 +324,13 @@ enum Commands {
     },
 }
 
-/// Helper to create a GeoParquet asset
-fn make_geoparquet_asset() -> crate::stac::Asset {
-    let mut asset = crate::stac::Asset::new("./items.parquet");
+/// Helper to create a GeoParquet asset.
+///
+/// This asset is attached to the upstream `stac::Collection` (see call
+/// sites), so it must be the upstream `stac::Asset`, not this crate's own
+/// document-model `Asset` (`crate::stac::Asset`).
+fn make_geoparquet_asset() -> stac::Asset {
+    let mut asset = stac::Asset::new("./items.parquet");
     asset.title = Some("STAC GeoParquet items".to_string());
     asset.r#type = Some("application/vnd.apache.parquet".to_string());
     asset.roles = vec!["collection-mirror".to_string()];

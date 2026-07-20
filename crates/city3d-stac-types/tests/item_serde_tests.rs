@@ -34,7 +34,12 @@ fn item_serialises_with_stac_field_names_and_order() {
     // back to a `BTreeMap`, which would alphabetise these keys instead
     // (assets, bbox, geometry, id, links, properties, stac_extensions,
     // stac_version, type) — this assertion is what catches that regression.
-    let keys: Vec<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
+    let keys: Vec<&str> = json
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     assert_eq!(
         keys,
         vec![
