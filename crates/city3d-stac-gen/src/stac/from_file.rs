@@ -11,8 +11,24 @@ use crate::metadata::CRS;
 use crate::reader::CityModelMetadataReader;
 use crate::stac::StacItemBuilder;
 use city3d_stac_types::checksum::file_checksum;
-use city3d_stac_types::stac::types::Link;
+use city3d_stac_types::stac::types::{Item, Link};
+use city3d_stac_types::stac::ItemMetadata;
 use std::path::Path;
+
+/// Read an existing Item JSON file from disk and extract its [`ItemMetadata`].
+///
+/// This is the filesystem-dependent counterpart of
+/// [`ItemMetadata::from_item`], which is pure and lives in
+/// `city3d-stac-types`. It belongs here, not there, for the same reason the
+/// rest of this module does: the types crate performs no I/O (see
+/// `city3d_stac_types::error`'s module doc), with `file_checksum` as the one
+/// sanctioned exception because `file:checksum` is content-derived rather
+/// than filesystem-derived.
+pub fn item_metadata_from_file(path: &Path) -> Result<ItemMetadata> {
+    let content = std::fs::read_to_string(path)?;
+    let item: Item = serde_json::from_str(&content)?;
+    Ok(ItemMetadata::from_item(&item))
+}
 
 /// Resolve CRS from reader, using the override as fallback when the reader's CRS is unknown.
 pub(crate) fn resolve_crs(reader: &dyn CityModelMetadataReader, crs_override: Option<&CRS>) -> CRS {
@@ -61,6 +77,49 @@ pub fn item_from_file_with_crs_override(
         .unwrap_or("unknown")
         .to_string();
 
+    build_item_from_file(id, file_path, reader, base_url, original_url, crs_override)
+}
+
+/// Build an Item builder from a file path with format suffix and optional CRS override
+pub fn item_from_file_with_format_suffix_and_crs(
+    file_path: &Path,
+    reader: &dyn CityModelMetadataReader,
+    base_url: Option<&str>,
+    original_url: Option<&str>,
+    crs_override: Option<&CRS>,
+) -> Result<StacItemBuilder> {
+    let stem = file_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
+
+    let suffix = match reader.encoding() {
+        "CityJSON" => "_cj",
+        "CityJSONSeq" => "_cjseq",
+        "FlatCityBuf" => "_fcb",
+        _ => "",
+    };
+
+    let id = format!("{stem}{suffix}");
+
+    build_item_from_file(id, file_path, reader, base_url, original_url, crs_override)
+}
+
+/// Shared body of the `item_from_file*` entry points above. Only the item ID
+/// construction differs between callers; everything else — bbox handling,
+/// `resolve_crs`, `city3d`, asset, link — must stay identical across both
+/// public entry points. This function exists precisely so that never has to
+/// be verified by inspection again: a `proj:code` bug once shipped because
+/// two copies of this logic disagreed (see
+/// `test_proj_code_matches_bbox_crs_when_reader_crs_unknown` below).
+fn build_item_from_file(
+    id: String,
+    file_path: &Path,
+    reader: &dyn CityModelMetadataReader,
+    base_url: Option<&str>,
+    original_url: Option<&str>,
+    crs_override: Option<&CRS>,
+) -> Result<StacItemBuilder> {
     let mut builder = StacItemBuilder::new(id);
 
     // Set bbox (transformed to WGS84 for STAC compliance)
@@ -101,105 +160,6 @@ pub fn item_from_file_with_crs_override(
     };
 
     // Generate asset href based on base_url or original_url
-    let file_name = file_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("data");
-
-    let href = match base_url {
-        Some(base) => {
-            let normalized_base = if base.ends_with('/') {
-                base.to_string()
-            } else {
-                format!("{base}/")
-            };
-            format!("{normalized_base}{file_name}")
-        }
-        None => match original_url {
-            Some(url) => url.to_string(),
-            None => file_name.to_string(),
-        },
-    };
-
-    builder = builder.data_asset(href.clone(), media_type, file_size, checksum);
-
-    // Add city-model relation link (per STAC 3D City Models Extension)
-    builder =
-        builder.link(Link::new(&href, "city-model").with_media_type(Some(media_type.to_string())));
-
-    Ok(builder)
-}
-
-/// Build an Item builder from a file path with format suffix in ID
-pub fn item_from_file_with_format_suffix(
-    file_path: &Path,
-    reader: &dyn CityModelMetadataReader,
-    base_url: Option<&str>,
-    original_url: Option<&str>,
-) -> Result<StacItemBuilder> {
-    item_from_file_with_format_suffix_and_crs(file_path, reader, base_url, original_url, None)
-}
-
-/// Build an Item builder from a file path with format suffix and optional CRS override
-pub fn item_from_file_with_format_suffix_and_crs(
-    file_path: &Path,
-    reader: &dyn CityModelMetadataReader,
-    base_url: Option<&str>,
-    original_url: Option<&str>,
-    crs_override: Option<&CRS>,
-) -> Result<StacItemBuilder> {
-    let stem = file_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-
-    let suffix = match reader.encoding() {
-        "CityJSON" => "_cj",
-        "CityJSONSeq" => "_cjseq",
-        "FlatCityBuf" => "_fcb",
-        _ => "",
-    };
-
-    let id = format!("{stem}{suffix}");
-
-    let mut builder = StacItemBuilder::new(id);
-
-    // Set bbox (transformed to WGS84 for STAC compliance)
-    if let Ok(bbox) = reader.bbox() {
-        let crs = resolve_crs(reader, crs_override);
-        let wgs84_bbox = bbox.to_wgs84(&crs)?;
-        builder = builder.bbox(wgs84_bbox).geometry_from_bbox();
-    }
-
-    // Add CityJSON metadata
-    let props = crate::adapter::properties_from_reader(reader)?;
-    // `proj:code` and the bbox transform above deliberately agree on the
-    // same resolved CRS: both fall back to `crs_override` when the
-    // reader's own CRS is unknown. Do not split them again — a reader
-    // with an unknown CRS plus a supplied override should describe its
-    // own coordinates in `proj:code`, not report them as unprojected.
-    let resolved_crs = resolve_crs(reader, crs_override);
-    builder = builder
-        .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
-        .city3d(props)?
-        .crs(&resolved_crs);
-
-    // Get file size and checksum for the asset (File Extension)
-    let file_size = std::fs::metadata(file_path).ok().map(|m| m.len());
-    let checksum = file_checksum(file_path);
-
-    let is_zip = file_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e == "zip")
-        .unwrap_or(false);
-
-    let media_type = if is_zip {
-        "application/zip"
-    } else {
-        encoding_media_type(reader.encoding())
-    };
-
     let file_name = file_path
         .file_name()
         .and_then(|n| n.to_str())
@@ -390,6 +350,54 @@ mod tests {
             .unwrap()
             .build()
             .unwrap();
+
+        assert!(!item_no_override
+            .properties
+            .additional_fields
+            .contains_key("proj:code"));
+    }
+
+    #[test]
+    fn test_proj_code_matches_bbox_crs_when_reader_crs_unknown_format_suffix() {
+        // Same regression as `test_proj_code_matches_bbox_crs_when_reader_crs_unknown`,
+        // pinned separately for `item_from_file_with_format_suffix_and_crs` — the
+        // entry point the collection CLI actually takes on filename collisions
+        // (see `src/cli/mod.rs`). Both public entry points share
+        // `build_item_from_file`, but that must stay explicit, not implied.
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("data")
+            .join("railway.city.json");
+        let reader = CityJSONReader::new(&path).unwrap();
+        assert!(
+            !reader.crs().unwrap().is_known(),
+            "fixture must have an unknown CRS for this test to be meaningful"
+        );
+
+        let override_crs = CRS::from_epsg(7415);
+        let item = item_from_file_with_format_suffix_and_crs(
+            &path,
+            &reader,
+            None,
+            None,
+            Some(&override_crs),
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+
+        assert_eq!(
+            item.properties.additional_fields.get("proj:code").unwrap(),
+            &Value::String(override_crs.to_stac_proj_code().unwrap())
+        );
+
+        // Negative control: without an override, an unknown reader CRS
+        // yields no `proj:code` at all.
+        let item_no_override =
+            item_from_file_with_format_suffix_and_crs(&path, &reader, None, None, None)
+                .unwrap()
+                .build()
+                .unwrap();
 
         assert!(!item_no_override
             .properties
