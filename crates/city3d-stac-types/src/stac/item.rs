@@ -223,8 +223,21 @@ impl StacItemBuilder {
         item.collection = self.collection_id;
         item.links = self.links;
 
-        // Build stac_extensions list dynamically
-        let mut stac_extensions = vec![CITY3D_EXTENSION.to_string()];
+        // Build stac_extensions list dynamically. Each extension is only
+        // declared when the Item actually carries a field it governs — the
+        // city3d schema's `require_any_field` rule requires at least one
+        // `city3d:*` property whenever the extension URL is declared, so
+        // declaring it unconditionally could produce a schema-invalid Item.
+        let mut stac_extensions = Vec::new();
+
+        if item
+            .properties
+            .additional_fields
+            .keys()
+            .any(|k| k.starts_with("city3d:"))
+        {
+            stac_extensions.push(CITY3D_EXTENSION.to_string());
+        }
 
         if item.properties.additional_fields.contains_key("proj:code") {
             stac_extensions.push(PROJECTION_EXTENSION.to_string());

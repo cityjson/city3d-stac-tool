@@ -128,17 +128,22 @@ mod stac_item_builder_tests {
 
     #[test]
     fn test_item_builder_stac_extensions() {
-        // Test without proj:code - no projection extension
+        // Test without proj:code and without any city3d:* property - neither
+        // extension should be declared. The 3D City Models extension is
+        // conditioned on at least one `city3d:*` property being present, the
+        // same way the projection extension is conditioned on `proj:code`
+        // (StacItemBuilder::build, city3d-stac-types/src/stac/item.rs) --
+        // declaring it unconditionally would make the Item invalid against
+        // the vendored schema's `require_any_field` rule.
         let item = StacItemBuilder::new("test-id")
             .build()
             .expect("Failed to build item");
 
-        // Should include 3D City Models extension
-        assert!(item.extensions.iter().any(|e| e.contains("stac-city3d")));
-        // Should NOT include projection extension (no proj:code property)
+        assert!(!item.extensions.iter().any(|e| e.contains("stac-city3d")));
         assert!(!item.extensions.iter().any(|e| e.contains("projection")));
 
-        // Test with proj:code - projection extension should be included
+        // Test with proj:code but still no city3d:* property - only the
+        // projection extension should be included.
         let item = StacItemBuilder::new("test-id")
             .property(
                 "proj:code".to_string(),
@@ -147,7 +152,23 @@ mod stac_item_builder_tests {
             .build()
             .expect("Failed to build item");
 
-        // Should include both extensions
+        assert!(!item.extensions.iter().any(|e| e.contains("stac-city3d")));
+        assert!(item.extensions.iter().any(|e| e.contains("projection")));
+
+        // Test with a city3d:* property and proj:code - both extensions
+        // should be included.
+        let item = StacItemBuilder::new("test-id")
+            .property(
+                "proj:code".to_string(),
+                Value::String("EPSG:4326".to_string()),
+            )
+            .property(
+                "city3d:version".to_string(),
+                Value::String("2.0".to_string()),
+            )
+            .build()
+            .expect("Failed to build item");
+
         assert!(item.extensions.iter().any(|e| e.contains("stac-city3d")));
         assert!(item.extensions.iter().any(|e| e.contains("projection")));
     }
