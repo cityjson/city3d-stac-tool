@@ -1,7 +1,7 @@
 //! End-to-end integration tests
 
 use city3d_stac::reader::{get_reader, CityJSONReader, CityModelMetadataReader};
-use city3d_stac::stac::{StacCollectionBuilder, StacItemBuilder};
+use city3d_stac::stac::{item_from_file, StacCollectionBuilder};
 use std::path::Path;
 use tempfile::tempdir;
 
@@ -25,7 +25,7 @@ mod e2e_single_file_tests {
         let reader = get_reader(&path).expect("Failed to get reader");
 
         // Step 2: Build STAC item
-        let item = StacItemBuilder::from_file(&path, reader.as_ref(), None, None)
+        let item = item_from_file(&path, reader.as_ref(), None, None)
             .expect("Failed to create item builder")
             .build()
             .expect("Failed to build item");
@@ -68,7 +68,7 @@ mod e2e_single_file_tests {
         let path = test_data_path("railway.city.json");
 
         let reader = get_reader(&path).expect("Failed to get reader");
-        let item = StacItemBuilder::from_file(&path, reader.as_ref(), None, None)
+        let item = item_from_file(&path, reader.as_ref(), None, None)
             .expect("Failed to create builder")
             .build()
             .expect("Failed to build item");
@@ -98,7 +98,7 @@ mod e2e_single_file_tests {
     fn test_e2e_item_serialization() {
         let path = test_data_path("delft.city.json");
         let reader = get_reader(&path).expect("Failed to get reader");
-        let item = StacItemBuilder::from_file(&path, reader.as_ref(), None, None)
+        let item = item_from_file(&path, reader.as_ref(), None, None)
             .expect("Failed to create builder")
             .build()
             .expect("Failed to build item");
@@ -120,7 +120,7 @@ mod e2e_single_file_tests {
     fn test_e2e_item_output_to_file() {
         let path = test_data_path("delft.city.json");
         let reader = get_reader(&path).expect("Failed to get reader");
-        let item = StacItemBuilder::from_file(&path, reader.as_ref(), None, None)
+        let item = item_from_file(&path, reader.as_ref(), None, None)
             .expect("Failed to create builder")
             .build()
             .expect("Failed to build item");
@@ -267,7 +267,7 @@ mod e2e_workflow_tests {
         for file_path in &files {
             let reader = get_reader(file_path).expect("Failed to get reader");
 
-            let item = StacItemBuilder::from_file(file_path, reader.as_ref(), None, None)
+            let item = item_from_file(file_path, reader.as_ref(), None, None)
                 .expect("Failed to create builder")
                 .build()
                 .expect("Failed to build item");
@@ -322,7 +322,7 @@ mod e2e_workflow_tests {
 
         // Create STAC item
         let reader = get_reader(&path).expect("Failed to get reader");
-        let item = StacItemBuilder::from_file(&path, reader.as_ref(), None, None)
+        let item = item_from_file(&path, reader.as_ref(), None, None)
             .expect("Failed to create builder")
             .build()
             .expect("Failed to build");
@@ -491,7 +491,7 @@ mod e2e_zip_file_tests {
         let reader = get_reader(temp_zip.path()).expect("Failed to get reader");
 
         // Build STAC item from ZIP file
-        let item = StacItemBuilder::from_file(temp_zip.path(), reader.as_ref(), None, None)
+        let item = item_from_file(temp_zip.path(), reader.as_ref(), None, None)
             .expect("Failed to create item builder")
             .build()
             .expect("Failed to build item");
@@ -516,7 +516,7 @@ mod e2e_zip_file_tests {
         let temp_zip = create_zip_with_cityjson();
         let reader = get_reader(temp_zip.path()).expect("Failed to get reader");
 
-        let item = StacItemBuilder::from_file(
+        let item = item_from_file(
             temp_zip.path(),
             reader.as_ref(),
             Some("https://example.com/data"),

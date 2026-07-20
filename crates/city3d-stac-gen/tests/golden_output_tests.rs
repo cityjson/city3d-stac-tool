@@ -4,7 +4,7 @@
 //! Never regenerate to make a refactor pass — that defeats the point of this file.
 
 use city3d_stac::reader::{get_reader, CityModelMetadataReader};
-use city3d_stac::stac::{StacCollectionBuilder, StacItemBuilder};
+use city3d_stac::stac::{item_from_file, StacCollectionBuilder};
 use city3d_stac::traversal::find_files_with_patterns;
 use std::path::{Path, PathBuf};
 
@@ -36,7 +36,7 @@ fn item_json(fixture: &str) -> String {
         .join("tests/data")
         .join(fixture);
     let reader = get_reader(&path).expect("reader");
-    let item = StacItemBuilder::from_file(&path, reader.as_ref(), None, None)
+    let item = item_from_file(&path, reader.as_ref(), None, None)
         .expect("builder")
         .build()
         .expect("build");

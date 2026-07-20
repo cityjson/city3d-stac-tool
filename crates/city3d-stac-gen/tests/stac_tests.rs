@@ -2,7 +2,7 @@
 
 use city3d_stac::metadata::BBox3D;
 use city3d_stac::reader::{CityJSONReader, CityModelMetadataReader};
-use city3d_stac::stac::{StacCollectionBuilder, StacItemBuilder};
+use city3d_stac::stac::{item_from_file, StacCollectionBuilder, StacItemBuilder};
 use serde_json::Value;
 use std::path::Path;
 
@@ -161,8 +161,7 @@ mod stac_item_from_file_tests {
         let path = test_data_path("delft.city.json");
         let reader = CityJSONReader::new(&path).expect("Failed to create reader");
 
-        let builder = StacItemBuilder::from_file(&path, &reader, None, None)
-            .expect("Failed to create builder");
+        let builder = item_from_file(&path, &reader, None, None).expect("Failed to create builder");
         let item = builder.build().expect("Failed to build item");
 
         // Check CityJSON extension properties (in additional_fields)
@@ -193,8 +192,7 @@ mod stac_item_from_file_tests {
         let path = test_data_path("railway.city.json");
         let reader = CityJSONReader::new(&path).expect("Failed to create reader");
 
-        let builder = StacItemBuilder::from_file(&path, &reader, None, None)
-            .expect("Failed to create builder");
+        let builder = item_from_file(&path, &reader, None, None).expect("Failed to create builder");
         let item = builder.build().expect("Failed to build item");
 
         // Railway should have city objects

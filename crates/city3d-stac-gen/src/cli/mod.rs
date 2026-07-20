@@ -592,7 +592,7 @@ async fn handle_item_command(
         InputSource::Remote(url) => Some(url.as_str()),
         InputSource::Local(_) => None,
     };
-    let mut builder = StacItemBuilder::from_file(
+    let mut builder = crate::stac::item_from_file(
         reader.file_path(),
         reader.as_ref(),
         base_url.as_deref(),
@@ -602,7 +602,7 @@ async fn handle_item_command(
     // Apply custom options
     if let Some(custom_id) = id {
         let props = crate::adapter::properties_from_reader(reader.as_ref())?;
-        let resolved_crs = StacItemBuilder::resolve_crs(reader.as_ref(), None);
+        let resolved_crs = crate::stac::from_file::resolve_crs(reader.as_ref(), None);
         builder = StacItemBuilder::new(custom_id)
             .datetime_from_reference_date(reader.metadata().ok().flatten().as_ref())
             .city3d(props)?
@@ -1858,7 +1858,7 @@ async fn process_collection_logic(
 
                 // Process and generate item
                 let builder_result = if has_collision {
-                    StacItemBuilder::from_file_with_format_suffix_and_crs(
+                    crate::stac::item_from_file_with_format_suffix_and_crs(
                         file_path,
                         reader.as_ref(),
                         base_url.as_deref(),
@@ -1866,7 +1866,7 @@ async fn process_collection_logic(
                         (*crs_override).as_ref(),
                     )
                 } else {
-                    StacItemBuilder::from_file_with_crs_override(
+                    crate::stac::item_from_file_with_crs_override(
                         file_path,
                         reader.as_ref(),
                         base_url.as_deref(),

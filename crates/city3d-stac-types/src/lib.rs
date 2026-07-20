@@ -6,6 +6,7 @@
 //! crate. That is what lets a writer such as `cityparquet-rs` depend on it
 //! without inheriting a CLI's dependency tree.
 
+pub mod checksum;
 pub mod error;
 pub mod extensions;
 pub mod metadata;
