@@ -64,6 +64,10 @@ pub enum CityJsonStacError {
     /// Generic error with custom message
     #[error("{0}")]
     Other(String),
+
+    /// Error from the shared types crate
+    #[error(transparent)]
+    City3d(#[from] city3d_stac_types::City3dError),
 }
 
 impl From<String> for CityJsonStacError {

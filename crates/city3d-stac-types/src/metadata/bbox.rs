@@ -1,6 +1,6 @@
 //! 3D Bounding box implementation
 
-use crate::error::{CityJsonStacError, Result};
+use crate::error::{City3dError, Result};
 use crate::metadata::crs::CRS;
 use serde::{Deserialize, Serialize};
 
@@ -89,7 +89,7 @@ impl BBox3D {
                     return Ok(self.clone());
                 }
                 // Coordinates are outside WGS84 range but CRS is unknown.
-                return Err(CityJsonStacError::Other(format!(
+                return Err(City3dError::Reprojection(format!(
                     "Bounding box [{}, {}, {}, {}] is outside WGS84 range but no CRS is \
                      specified in the file. STAC requires WGS84 coordinates. Please add a \
                      'referenceSystem' to the CityJSON metadata so the coordinates can be \
@@ -127,17 +127,17 @@ impl BBox3D {
 
         // epsg code is u32 but proj4rs uses u16
         let proj_code = u16::try_from(horizontal_epsg).map_err(|_| {
-            CityJsonStacError::Other(format!("EPSG code {horizontal_epsg} exceeds u16 range"))
+            City3dError::Reprojection(format!("EPSG code {horizontal_epsg} exceeds u16 range"))
         })?;
 
         let src_proj = proj4rs::Proj::from_epsg_code(proj_code).map_err(|e| {
-            CityJsonStacError::Other(format!(
+            City3dError::Reprojection(format!(
                 "Failed to create projection for EPSG:{horizontal_epsg}: {e}"
             ))
         })?;
         let dst_proj = proj4rs::Proj::from_proj_string("+proj=longlat +datum=WGS84 +no_defs")
             .map_err(|e| {
-                CityJsonStacError::Other(format!("Failed to create WGS84 projection: {e}"))
+                City3dError::Reprojection(format!("Failed to create WGS84 projection: {e}"))
             })?;
 
         // Transform the 4 corners of the 2D bounding box.
@@ -166,7 +166,7 @@ impl BBox3D {
         for (x, y) in &corners {
             let mut point = (*x, *y, 0.0_f64);
             proj4rs::transform::transform(&src_proj, &dst_proj, &mut point).map_err(|e| {
-                CityJsonStacError::Other(format!(
+                City3dError::Reprojection(format!(
                     "Failed to transform coordinates ({x}, {y}) from EPSG:{horizontal_epsg} to WGS84: {e}"
                 ))
             })?;
