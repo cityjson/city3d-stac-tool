@@ -1,12 +1,12 @@
 //! STAC Item builder
 
 use crate::error::Result;
+use crate::extensions::{CITY3D_EXTENSION, FILE_EXTENSION, PROJECTION_EXTENSION};
 use crate::metadata::BBox3D;
 use crate::metadata::CRS;
+use crate::stac::types::{Asset, Item, Link};
+use crate::stac::City3dProperties;
 use chrono::{DateTime, Utc};
-use city3d_stac_types::extensions::{CITY3D_EXTENSION, FILE_EXTENSION, PROJECTION_EXTENSION};
-use city3d_stac_types::stac::types::{Asset, Item, Link};
-use city3d_stac_types::stac::City3dProperties;
 use indexmap::IndexMap;
 use serde_json::Value;
 

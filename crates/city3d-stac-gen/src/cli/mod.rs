@@ -1958,7 +1958,7 @@ async fn process_collection_logic(
                                 }
                             } else {
                                 pb.inc(1);
-                                ItemResult::Fatal(e)
+                                ItemResult::Fatal(CityJsonStacError::City3d(e))
                             }
                         }
                     },

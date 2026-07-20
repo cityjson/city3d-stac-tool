@@ -11,18 +11,17 @@ mod collection;
 pub mod from_file;
 pub mod geoparquet;
 pub mod interop;
-mod item;
 
 pub use catalog::StacCatalogBuilder;
 pub use city3d_stac_types::stac::{
     AggregatedSummaries, City3dProperties, CityObjectsCount, CollectionAccumulator, ItemMetadata,
+    StacItemBuilder,
 };
 pub use collection::StacCollectionBuilder;
 pub use from_file::{
     item_from_file, item_from_file_with_crs_override, item_from_file_with_format_suffix,
     item_from_file_with_format_suffix_and_crs,
 };
-pub use item::StacItemBuilder;
 
 // Item documents: this project's own model.
 pub type StacItem = city3d_stac_types::stac::types::Item;
