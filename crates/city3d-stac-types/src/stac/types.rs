@@ -13,10 +13,42 @@
 //! `stac::Item` field for field, which is what keeps the golden fixtures
 //! byte-identical across the swap.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
+
+/// Deserialise a datetime the way upstream `stac` does: RFC 3339 first, then a
+/// naive datetime (with optional fractional seconds) assumed to be UTC.
+///
+/// STAC mandates RFC 3339, but real-world Items in the wild omit the timezone.
+/// Rejecting them here would make this crate refuse documents the tool has
+/// always accepted, so the read path stays permissive while the write path
+/// stays strict — serialisation is always RFC 3339 with `Z`.
+fn deserialize_datetime_permissively<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<DateTime<Utc>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    let Some(s) = Option::<String>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+
+    if let Ok(datetime) = DateTime::parse_from_rfc3339(&s) {
+        return Ok(Some(datetime.to_utc()));
+    }
+
+    let (mut datetime, remainder) =
+        NaiveDateTime::parse_and_remainder(&s, "%Y-%m-%dT%H:%M:%S").map_err(D::Error::custom)?;
+    if remainder.starts_with('.') {
+        datetime =
+            NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M:%S%.f").map_err(D::Error::custom)?;
+    }
+    Ok(Some(datetime.and_utc()))
+}
 
 /// The STAC specification version these documents declare.
 pub const STAC_VERSION: &str = "1.1.0";
@@ -82,11 +114,19 @@ impl Item {
 /// be present on every Item.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ItemProperties {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_datetime_permissively")]
     pub datetime: Option<DateTime<Utc>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_datetime_permissively"
+    )]
     pub start_datetime: Option<DateTime<Utc>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_datetime_permissively"
+    )]
     pub end_datetime: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -149,6 +189,12 @@ pub struct Link {
     pub media_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// Members that are not part of the Link specification — including the
+    /// STAC API fields (`method`, `headers`, `body`, `merge`) this project
+    /// never writes. Keeping them means a link read in and written back out is
+    /// not silently stripped, which is what makes `interop` lossless.
+    #[serde(flatten)]
+    pub additional_fields: Map<String, Value>,
 }
 
 impl Link {
@@ -159,6 +205,7 @@ impl Link {
             rel: rel.into(),
             media_type: None,
             title: None,
+            additional_fields: Map::new(),
         }
     }
 

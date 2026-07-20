@@ -87,3 +87,70 @@ fn unknown_top_level_fields_round_trip() {
     let back = serde_json::to_value(&item).unwrap();
     assert_eq!(back["some_foreign_member"], serde_json::json!({"a": 1}));
 }
+
+/// Upstream `stac::Link` carries a flattened `additional_fields`. Ours must
+/// too, or foreign members on links are silently dropped when a user-supplied
+/// Item is read and written back out.
+#[test]
+fn unknown_link_fields_round_trip() {
+    let json = serde_json::json!({
+        "href": "./a.json",
+        "rel": "alternate",
+        "type": "application/json",
+        "title": "A",
+        "method": "GET",
+        "cityjson:note": "keep me"
+    });
+    let link: Link = serde_json::from_value(json.clone()).unwrap();
+    let back = serde_json::to_value(&link).unwrap();
+    assert_eq!(back["method"], "GET");
+    assert_eq!(back["cityjson:note"], "keep me");
+    assert_eq!(back, json);
+}
+
+/// Upstream deserialises `datetime` permissively: RFC 3339 first, falling back
+/// to a naive datetime assumed to be UTC. Items the CLI accepted before the
+/// local model existed must keep parsing.
+#[test]
+fn naive_datetimes_are_accepted() {
+    for (raw, expected) in [
+        ("2024-01-15T12:00:00Z", "2024-01-15T12:00:00Z"),
+        ("2024-01-15T12:00:00+01:00", "2024-01-15T11:00:00Z"),
+        // No timezone at all — rejected by RFC 3339, accepted by upstream.
+        ("2024-01-15T12:00:00", "2024-01-15T12:00:00Z"),
+        ("2024-01-15T12:00:00.500", "2024-01-15T12:00:00.500Z"),
+    ] {
+        let item: Item = serde_json::from_value(serde_json::json!({
+            "type": "Feature",
+            "stac_version": "1.1.0",
+            "id": "dt",
+            "geometry": null,
+            "properties": {"datetime": raw, "start_datetime": raw, "end_datetime": raw},
+            "links": [],
+            "assets": {}
+        }))
+        .unwrap_or_else(|e| panic!("{raw} should parse: {e}"));
+
+        let json = serde_json::to_value(&item).unwrap();
+        assert_eq!(json["properties"]["datetime"], expected, "input {raw}");
+        assert_eq!(
+            json["properties"]["start_datetime"], expected,
+            "input {raw}"
+        );
+        assert_eq!(json["properties"]["end_datetime"], expected, "input {raw}");
+    }
+}
+
+#[test]
+fn unparseable_datetimes_are_still_rejected() {
+    let result: Result<Item, _> = serde_json::from_value(serde_json::json!({
+        "type": "Feature",
+        "stac_version": "1.1.0",
+        "id": "dt",
+        "geometry": null,
+        "properties": {"datetime": "not-a-datetime"},
+        "links": [],
+        "assets": {}
+    }));
+    assert!(result.is_err());
+}
