@@ -6,12 +6,12 @@ default:
 
 # Generate STAC types from JSON schemas
 #
-# Note: STAC types are manually maintained in crates/city3d-stac-gen/src/stac/models.rs
+# Note: STAC types are manually maintained in crates/city3d-stac-types/src/stac/models.rs
 # These types are derived from STAC v1.0.0 JSON schemas and match
 # the official STAC specification structure.
 #
 # To modify STAC types:
-# 1. Edit crates/city3d-stac-gen/src/stac/models.rs
+# 1. Edit crates/city3d-stac-types/src/stac/models.rs
 # 2. Run `cargo build` to recompile with changes
 # 3. Run tests to verify changes
 

@@ -24,7 +24,10 @@ use serde_json::{Map, Value};
 /// STAC mandates RFC 3339, but real-world Items in the wild omit the timezone.
 /// Rejecting them here would make this crate refuse documents the tool has
 /// always accepted, so the read path stays permissive while the write path
-/// stays strict — serialisation is always RFC 3339 with `Z`.
+/// stays strict — serialisation is always RFC 3339 with `Z`. Unlike upstream
+/// `stac`, this does not `log::warn!` on the naive-datetime fallback: `log`
+/// is outside this crate's dependency budget, so the warning was
+/// deliberately dropped rather than pulled in for a single call site.
 fn deserialize_datetime_permissively<'de, D>(
     deserializer: D,
 ) -> std::result::Result<Option<DateTime<Utc>>, D::Error>

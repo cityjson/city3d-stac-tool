@@ -9,20 +9,7 @@ description = "Generate STAC metadata for CityJSON datasets"
 readme = "../../README.md"
 keywords = ["stac", "cityjson", "3d", "gis", "geospatial"]
 categories = ["command-line-utilities", "science::geo"]
-exclude = [
-    "tests/data/",
-    ".agent/",
-    ".agents/",
-    ".serena/",
-    ".devcontainer/",
-    ".githooks/",
-    ".github/",
-    "DESIGN_DOC.md",
-    "plan.md",
-    "task.md",
-    "Justfile",
-    "scripts/",
-]
+exclude = ["tests/data/"]
 
 [dependencies]
 # Shared vocabulary crate
