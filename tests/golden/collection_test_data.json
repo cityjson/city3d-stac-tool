@@ -1,0 +1,123 @@
+{
+  "type": "Collection",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://cityjson.github.io/stac-city3d/v0.2.0/schema.json",
+    "https://stac-extensions.github.io/projection/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/item-assets/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json"
+  ],
+  "id": "tests-data",
+  "description": "3D City Model collection",
+  "license": "proprietary",
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          0.56,
+          0.64,
+          -14.93,
+          12.64,
+          52.038122013397846,
+          207.042
+        ]
+      ]
+    },
+    "temporal": {
+      "interval": [
+        [
+          null,
+          null
+        ]
+      ]
+    }
+  },
+  "summaries": {
+    "city3d:city_objects": {
+      "min": 3,
+      "max": 1110,
+      "total": 3543
+    },
+    "city3d:co_types": [
+      "Bridge",
+      "BridgeConstructiveElement",
+      "BridgeInstallation",
+      "Building",
+      "BuildingInstallation",
+      "BuildingPart",
+      "CityFurniture",
+      "CityObjectGroup",
+      "GenericCityObject",
+      "Railway",
+      "SolitaryVegetationObject",
+      "TINRelief",
+      "Tunnel",
+      "TunnelInstallation",
+      "WaterBody"
+    ],
+    "city3d:lods": [
+      "0",
+      "1",
+      "1.2",
+      "1.3",
+      "2",
+      "2.2",
+      "3"
+    ],
+    "city3d:materials": [
+      false,
+      true
+    ],
+    "city3d:semantic_surfaces": [
+      false,
+      true
+    ],
+    "city3d:textures": [
+      false,
+      true
+    ],
+    "city3d:version": [
+      "2.0",
+      "3.0"
+    ],
+    "proj:code": [
+      "EPSG:7415"
+    ]
+  },
+  "links": [],
+  "item_assets": {
+    "data": {
+      "title": "3D city model data",
+      "roles": [
+        "data"
+      ],
+      "proj:code": "EPSG:7415",
+      "city3d:lods": [
+        "0",
+        "1",
+        "1.2",
+        "1.3",
+        "2",
+        "2.2",
+        "3"
+      ],
+      "city3d:co_types": [
+        "Bridge",
+        "BridgeConstructiveElement",
+        "BridgeInstallation",
+        "Building",
+        "BuildingInstallation",
+        "BuildingPart",
+        "CityFurniture",
+        "CityObjectGroup",
+        "GenericCityObject",
+        "Railway",
+        "SolitaryVegetationObject",
+        "TINRelief",
+        "Tunnel",
+        "TunnelInstallation",
+        "WaterBody"
+      ]
+    }
+  }
+}
