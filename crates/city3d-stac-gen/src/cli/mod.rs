@@ -2374,6 +2374,30 @@ struct UpdateCollectionConfig {
     max_item_links: Option<usize>,
 }
 
+/// Validate the subset of the STAC Item spec this project's own permissive
+/// document model no longer enforces at parse time.
+///
+/// The old `StacItem` was upstream `stac::Item`, which validated
+/// `type == "Feature"` and constrained `bbox` to exactly 4 or 6 elements.
+/// The local model (`city3d-stac-types`) accepts any `type` string and any
+/// length `Vec<f64>` for `bbox`, so "deserialised successfully" is no
+/// longer the same thing as "valid" — callers that used to rely on that,
+/// like `update-collection --dry-run`, must check this explicitly.
+fn validate_stac_item_semantics(item: &crate::stac::StacItem) -> std::result::Result<(), String> {
+    if item.type_ != "Feature" {
+        return Err(format!("type must be \"Feature\", got {:?}", item.type_));
+    }
+    if let Some(bbox) = &item.bbox {
+        if bbox.len() != 4 && bbox.len() != 6 {
+            return Err(format!(
+                "bbox must have exactly 4 or 6 elements, got {}",
+                bbox.len()
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()> {
     // Dry-run mode: validate only
     if config.dry_run {
@@ -2396,10 +2420,16 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
                 // Try to parse as STAC item
                 match std::fs::read_to_string(item_path) {
                     Ok(content) => match serde_json::from_str::<crate::stac::StacItem>(&content) {
-                        Ok(_) => {
-                            println!("  ✓ {}", fname);
-                            found += 1;
-                        }
+                        Ok(item) => match validate_stac_item_semantics(&item) {
+                            Ok(()) => {
+                                println!("  ✓ {}", fname);
+                                found += 1;
+                            }
+                            Err(reason) => {
+                                println!("  ✗ {}: Invalid STAC item - {}", fname, reason);
+                                all_valid = false;
+                            }
+                        },
                         Err(e) => {
                             println!("  ✗ {}: Invalid STAC item - {}", fname, e);
                             all_valid = false;
@@ -2819,5 +2849,41 @@ mod tests {
             "vienna-config.yaml"
         );
         assert_eq!(fallback_folder_name("config"), "config");
+    }
+
+    // The local StacItem document model accepts any `type` string and any-
+    // length `bbox`, unlike the upstream `stac::Item` it replaced, which
+    // validated `type == "Feature"` and constrained `bbox` to 4 or 6
+    // elements. `validate_stac_item_semantics` restores that check for
+    // callers — like `update-collection --dry-run` — that used to get it
+    // for free from deserialisation alone.
+    #[test]
+    fn validate_stac_item_semantics_accepts_a_well_formed_item() {
+        let mut item = crate::stac::StacItem::new("ok");
+        item.bbox = Some(vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0]);
+        assert!(validate_stac_item_semantics(&item).is_ok());
+
+        let mut item_2d = crate::stac::StacItem::new("ok-2d");
+        item_2d.bbox = Some(vec![0.0, 0.0, 10.0, 10.0]);
+        assert!(validate_stac_item_semantics(&item_2d).is_ok());
+
+        let no_bbox = crate::stac::StacItem::new("ok-no-bbox");
+        assert!(validate_stac_item_semantics(&no_bbox).is_ok());
+    }
+
+    #[test]
+    fn validate_stac_item_semantics_rejects_non_feature_type() {
+        let mut item = crate::stac::StacItem::new("bad-type");
+        item.type_ = "NotAFeature".to_string();
+        let err = validate_stac_item_semantics(&item).unwrap_err();
+        assert!(err.contains("Feature"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn validate_stac_item_semantics_rejects_malformed_bbox_length() {
+        let mut item = crate::stac::StacItem::new("bad-bbox");
+        item.bbox = Some(vec![0.0, 0.0, 0.0, 10.0, 10.0]); // 5 elements
+        let err = validate_stac_item_semantics(&item).unwrap_err();
+        assert!(err.contains("4 or 6"), "unexpected message: {err}");
     }
 }

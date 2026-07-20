@@ -608,6 +608,46 @@ mod stac_collection_aggregate_from_items_tests {
     }
 
     #[test]
+    fn test_aggregate_skips_malformed_length_bbox() {
+        // A 5-element bbox is neither a valid 2D (4) nor 3D (6) bbox. It
+        // must not be silently misread as 2D with the 5th value discarded
+        // (which would previously happen for any length >= 4): the item
+        // should be skipped from spatial extent aggregation entirely,
+        // leaving the extent to reflect only the well-formed item.
+        let malformed = create_test_stac_item(
+            "malformed-item",
+            "CityJSON",
+            vec![],
+            vec![],
+            1,
+            None,
+            Some(vec![100.0, 100.0, 100.0, 200.0, 200.0]), // 5 elements
+        );
+        let well_formed = create_test_stac_item(
+            "well-formed-item",
+            "CityJSON",
+            vec![],
+            vec![],
+            1,
+            None,
+            Some(vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0]),
+        );
+
+        let collection = StacCollectionBuilder::new("test")
+            .aggregate_from_items(&[malformed, well_formed])
+            .expect("Failed to aggregate")
+            .build()
+            .expect("Failed to build collection");
+
+        let stac_bbox = collection.extent.spatial.bbox[0];
+        let bbox: Vec<f64> = stac_bbox.into();
+        // Extent must match only the well-formed item's bbox, not be
+        // corrupted or widened by the malformed one's values (0.0..200.0
+        // would leak in if the 5-element bbox had been misread as 2D).
+        assert_eq!(bbox, vec![0.0, 0.0, 0.0, 10.0, 10.0, 10.0]);
+    }
+
+    #[test]
     fn test_aggregate_handles_missing_properties() {
         // Item with minimal properties
         let mut item = StacItem::new("minimal-item");

@@ -149,3 +149,95 @@ mod cli_item_tests {
         assert!(content.contains("city3d:lods"));
     }
 }
+
+/// `update-collection --dry-run` used to get item validation for free: the
+/// old `StacItem` was upstream `stac::Item`, which rejected documents with
+/// `type != "Feature"` or a malformed-length `bbox` at deserialisation. The
+/// local document model accepts both, so "deserialised successfully" is no
+/// longer "valid" — these pin that the dry-run path still catches what the
+/// old code rejected, end to end through the CLI.
+mod cli_update_collection_dry_run_tests {
+    use super::*;
+
+    fn write_item(dir: &Path, name: &str, contents: &str) -> std::path::PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, contents).expect("Failed to write item file");
+        path
+    }
+
+    #[test]
+    fn dry_run_accepts_a_well_formed_item() {
+        let temp = tempdir().expect("Failed to create temp dir");
+        let item = write_item(
+            temp.path(),
+            "item.json",
+            r#"{
+                "type": "Feature",
+                "stac_version": "1.1.0",
+                "id": "ok",
+                "geometry": null,
+                "bbox": [0.0, 0.0, 0.0, 10.0, 10.0, 10.0],
+                "properties": {"datetime": null},
+                "links": [],
+                "assets": {}
+            }"#,
+        );
+
+        let mut cmd = Command::cargo_bin("city3dstac").unwrap();
+        cmd.args(["--dry-run", "update-collection", item.to_str().unwrap()])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("1/1 valid"));
+    }
+
+    #[test]
+    fn dry_run_rejects_a_non_feature_type() {
+        let temp = tempdir().expect("Failed to create temp dir");
+        let item = write_item(
+            temp.path(),
+            "item.json",
+            r#"{
+                "type": "NotAFeature",
+                "stac_version": "1.1.0",
+                "id": "bad-type",
+                "geometry": null,
+                "properties": {"datetime": null},
+                "links": [],
+                "assets": {}
+            }"#,
+        );
+
+        let mut cmd = Command::cargo_bin("city3dstac").unwrap();
+        cmd.args(["--dry-run", "update-collection", item.to_str().unwrap()])
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("Invalid STAC item"))
+            .stdout(predicate::str::contains("Feature"));
+    }
+
+    #[test]
+    fn dry_run_rejects_a_malformed_length_bbox() {
+        let temp = tempdir().expect("Failed to create temp dir");
+        let item = write_item(
+            temp.path(),
+            "item.json",
+            r#"{
+                "type": "Feature",
+                "stac_version": "1.1.0",
+                "id": "bad-bbox",
+                "geometry": null,
+                "bbox": [0.0, 0.0, 0.0, 10.0, 10.0],
+                "properties": {"datetime": null},
+                "links": [],
+                "assets": {}
+            }"#,
+        );
+
+        let mut cmd = Command::cargo_bin("city3dstac").unwrap();
+        cmd.args(["--dry-run", "update-collection", item.to_str().unwrap()])
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("Invalid STAC item"))
+            .stdout(predicate::str::contains("4 or 6"));
+    }
+}

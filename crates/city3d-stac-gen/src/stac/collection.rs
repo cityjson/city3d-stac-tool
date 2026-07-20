@@ -608,31 +608,42 @@ impl StacCollectionBuilder {
             }
         }
 
-        // Merge spatial extents from item bboxes
+        // Merge spatial extents from item bboxes. Per the GeoJSON/STAC bbox
+        // spec, a bbox array has exactly 2*n elements for n dimensions, so
+        // only 4 (2D) or 6 (3D) are valid here. A length in between or
+        // beyond (e.g. 5 or 7) is malformed: silently reading it as 2D and
+        // discarding the trailing element(s) would misinterpret their
+        // meaning rather than report the problem, so such items are skipped
+        // with a logged reason instead of aggregated.
         let parsed_bboxes: Vec<BBox3D> = items
             .iter()
             .filter_map(|item| {
                 let bbox_vec: Vec<f64> = item.bbox.clone()?;
-                if bbox_vec.len() == 6 {
-                    Some(BBox3D::new(
+                match bbox_vec.len() {
+                    6 => Some(BBox3D::new(
                         bbox_vec[0],
                         bbox_vec[1],
                         bbox_vec[2],
                         bbox_vec[3],
                         bbox_vec[4],
                         bbox_vec[5],
-                    ))
-                } else if bbox_vec.len() >= 4 {
-                    Some(BBox3D::new(
+                    )),
+                    4 => Some(BBox3D::new(
                         bbox_vec[0],
                         bbox_vec[1],
                         0.0,
                         bbox_vec[2],
                         bbox_vec[3],
                         0.0,
-                    ))
-                } else {
-                    None
+                    )),
+                    n => {
+                        log::warn!(
+                            "item {:?} has a bbox with {n} element(s) (expected 4 or 6); \
+                             skipping it for spatial extent aggregation",
+                            item.id
+                        );
+                        None
+                    }
                 }
             })
             .collect();
