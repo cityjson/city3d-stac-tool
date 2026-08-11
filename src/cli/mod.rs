@@ -2773,15 +2773,29 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
 /// Files that cannot be read or do not parse as JSON are skipped silently: the
 /// directory is an output tree that may legitimately contain unrelated files.
 /// A missing `dir` still surfaces as an error from `read_dir`.
+///
+/// The descent never follows a symlinked directory, so a link pointing at its
+/// own ancestor cannot trap the walk or duplicate the Items beneath it.
+/// Symlinks to plain files are still read.
 fn collect_item_files(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut found = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(current) = stack.pop() {
         let entries = std::fs::read_dir(&current).map_err(CityJsonStacError::IoError)?;
         for entry in entries {
-            let path = entry.map_err(CityJsonStacError::IoError)?.path();
-            if path.is_dir() {
+            let entry = entry.map_err(CityJsonStacError::IoError)?;
+            // `file_type()` describes the entry itself and, unlike
+            // `Path::is_dir`, never resolves through a symlink.
+            let file_type = entry.file_type().map_err(CityJsonStacError::IoError)?;
+            let path = entry.path();
+            if file_type.is_dir() {
                 stack.push(path);
+                continue;
+            }
+            if file_type.is_symlink() && path.is_dir() {
+                // A symlink to a directory: skip rather than descend. One
+                // pointing at an ancestor would make the descent unbounded and
+                // collect everything beneath it once per level.
                 continue;
             }
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
