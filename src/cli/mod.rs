@@ -164,13 +164,26 @@ enum Commands {
     #[command(visible_alias = "aggregate")]
     UpdateCollection {
         /// STAC item JSON files to aggregate
-        #[arg(required_unless_present = "items_from_file")]
+        #[arg(required_unless_present_any = ["items_from_file", "items_dir"])]
         items: Vec<PathBuf>,
 
         /// Read item file paths from a text file (one path per line).
         /// Use this when the number of items exceeds shell argument limits.
         #[arg(long)]
         items_from_file: Option<PathBuf>,
+
+        /// Recursively collect STAC item files from a directory.
+        ///
+        /// Any `.json` file that parses as a STAC Item (`type: "Feature"` with a
+        /// `stac_version`) is collected; `collection.json` and `catalog.json` are
+        /// skipped. Content sniffing rather than a filename glob, because
+        /// CityParquet names its Item `metadata.json` while this tool's own
+        /// convention is `*_item.json`.
+        ///
+        /// Composes with the positional `items` and `--items-from-file`: the
+        /// union of all three is aggregated.
+        #[arg(long)]
+        items_dir: Option<PathBuf>,
 
         /// Output file path for the collection (collection.json)
         #[arg(short, long, default_value = "./collection.json")]
@@ -436,6 +449,7 @@ pub async fn run() -> Result<()> {
         Commands::UpdateCollection {
             items,
             items_from_file,
+            items_dir,
             output,
             config,
             id,
@@ -458,6 +472,9 @@ pub async fn run() -> Result<()> {
                         all_items.push(PathBuf::from(line));
                     }
                 }
+            }
+            if let Some(dir) = items_dir {
+                all_items.extend(collect_item_files(&dir)?);
             }
             handle_update_collection_command(UpdateCollectionConfig {
                 items: all_items,
@@ -2744,6 +2761,51 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
     }
 
     Ok(())
+}
+
+/// Recursively collect files under `dir` that parse as STAC Items.
+///
+/// Selection is by CONTENT (`type == "Feature"` plus a `stac_version`), never by
+/// filename, so both `metadata.json` (CityParquet) and `*_item.json` (this
+/// tool's own convention) are found. `collection.json` and `catalog.json` are
+/// skipped by name — they are valid JSON but never Items.
+///
+/// Files that cannot be read or do not parse as JSON are skipped silently: the
+/// directory is an output tree that may legitimately contain unrelated files.
+/// A missing `dir` still surfaces as an error from `read_dir`.
+fn collect_item_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut found = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let entries = std::fs::read_dir(&current).map_err(CityJsonStacError::IoError)?;
+        for entry in entries {
+            let path = entry.map_err(CityJsonStacError::IoError)?.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name == "collection.json" || name == "catalog.json" {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+                continue;
+            };
+            if value.get("type").and_then(|t| t.as_str()) == Some("Feature")
+                && value.get("stac_version").is_some()
+            {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
 }
 
 #[cfg(test)]
