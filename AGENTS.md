@@ -100,6 +100,48 @@ cityjson-stac item https://example.com/data.zip -o data_item.json
 cityjson-stac item https://example.com/data.zip --base-url https://cdn.example.com -o data_item.json
 ```
 
+## Workspace Layout
+
+This is a two-crate Cargo workspace (`crates/city3d-stac-types`,
+`crates/city3d-stac-gen`), split so that external writers can depend on the
+STAC representation without inheriting the CLI's reader stack.
+
+- **`city3d-stac-types`** — the dependency-light vocabulary crate:
+  `City3dProperties`, `StacItemBuilder`, the local STAC serde model
+  (`stac::types`), metadata types (`BBox3D`, `CRS`, `AttributeDefinition`,
+  …), checksums, and `extensions::CITY3D_EXTENSION` (the pinned `city3d`
+  schema URL). Meant to be reused by external projects (e.g.
+  `cityparquet-rs`) that only need to emit a STAC Item.
+
+  **Rule: this crate must never gain a runtime dependency on `stac`,
+  `tokio`, `object_store`, or `reqwest`.** Its runtime dependency budget is
+  exactly `serde`, `serde_json`, `chrono`, `indexmap`, `thiserror`, `sha2`,
+  `hex`, `proj4rs` — check with
+  `cargo tree -p city3d-stac-types --edges normal`. `jsonschema` is a
+  dev-dependency only (used by `tests/schema_conformance_tests.rs`, which
+  validates emitted Items against the vendored
+  `schemas/stac-city3d-v0.2.0.json` fixture) and must never move to
+  `[dependencies]`.
+
+- **`city3d-stac-gen`** (lib `city3d_stac`, bin `city3dstac`) — the CLI,
+  the format readers, `CityModelMetadataReader`, directory traversal, and
+  the `StacCollectionBuilder` / `StacCatalogBuilder`. `collection.rs` and
+  `catalog.rs` deliberately stay in this crate, not in `city3d-stac-types`,
+  because they depend on the upstream `stac` crate and the external
+  consumer only needs to emit a single Item, not a Collection or Catalog.
+
+The vendored schema is a drift guard: if the published `stac-city3d`
+schema moves past the version `CITY3D_EXTENSION` is pinned to, or
+`City3dProperties` emits a shape the extension forbids,
+`schema_conformance_tests.rs` fails in the types crate — before it can
+surface as invalid output in a downstream consumer.
+
+The "Project Structure" section below predates the crate split and
+describes a single top-level `src/`; the same modules now live under
+`crates/city3d-stac-gen/src/` (readers, CLI, traversal, collection/catalog
+builders) and `crates/city3d-stac-types/src/` (metadata, STAC
+types/item builder, checksum, extensions).
+
 ## Project Structure
 
 ```

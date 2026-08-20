@@ -1,0 +1,85 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://cityjson.github.io/stac-city3d/v0.2.0/schema.json",
+    "https://stac-extensions.github.io/projection/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json"
+  ],
+  "id": "with_reference_date.city",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          3.3137339040032217,
+          47.975279244557505
+        ],
+        [
+          3.3138609389360587,
+          47.975279244557505
+        ],
+        [
+          3.3138609389360587,
+          47.975443108896485
+        ],
+        [
+          3.3137339040032217,
+          47.975443108896485
+        ],
+        [
+          3.3137339040032217,
+          47.975279244557505
+        ]
+      ]
+    ]
+  },
+  "bbox": [
+    3.3137339040032217,
+    47.975279244557505,
+    0.0,
+    3.3138609389360587,
+    47.975443108896485,
+    30.0
+  ],
+  "properties": {
+    "datetime": "2021-06-15T00:00:00Z",
+    "city3d:version": "2.0",
+    "city3d:city_objects": 1,
+    "city3d:lods": [
+      "2"
+    ],
+    "city3d:co_types": [
+      "Building"
+    ],
+    "city3d:attributes": [
+      {
+        "name": "yearOfConstruction",
+        "type": "Number"
+      }
+    ],
+    "city3d:semantic_surfaces": false,
+    "city3d:textures": false,
+    "city3d:materials": false,
+    "proj:code": "EPSG:7415"
+  },
+  "links": [
+    {
+      "href": "with_reference_date.city.json",
+      "rel": "city-model",
+      "type": "application/city+json"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "with_reference_date.city.json",
+      "title": "3D city model data",
+      "type": "application/city+json",
+      "roles": [
+        "data"
+      ],
+      "file:size": 708,
+      "file:checksum": "1220409d0b9fc2ef7b66ef84d57d047f3a0b4fb45c8c28804572798484eb4122f07f"
+    }
+  }
+}

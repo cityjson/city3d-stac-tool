@@ -1,0 +1,104 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://cityjson.github.io/stac-city3d/v0.2.0/schema.json",
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json"
+  ],
+  "id": "railway.city",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          0.56,
+          0.64
+        ],
+        [
+          12.64,
+          0.64
+        ],
+        [
+          12.64,
+          7.68
+        ],
+        [
+          0.56,
+          7.68
+        ],
+        [
+          0.56,
+          0.64
+        ]
+      ]
+    ]
+  },
+  "bbox": [
+    0.56,
+    0.64,
+    7.579,
+    12.64,
+    7.68,
+    9.103
+  ],
+  "properties": {
+    "datetime": null,
+    "city3d:version": "2.0",
+    "city3d:city_objects": 121,
+    "city3d:lods": [
+      "3"
+    ],
+    "city3d:co_types": [
+      "Bridge",
+      "BridgeConstructiveElement",
+      "BridgeInstallation",
+      "Building",
+      "BuildingInstallation",
+      "CityFurniture",
+      "CityObjectGroup",
+      "GenericCityObject",
+      "Railway",
+      "SolitaryVegetationObject",
+      "TINRelief",
+      "Tunnel",
+      "TunnelInstallation",
+      "WaterBody"
+    ],
+    "city3d:attributes": [
+      {
+        "name": "class",
+        "type": "String"
+      },
+      {
+        "name": "function",
+        "type": "String"
+      },
+      {
+        "name": "species",
+        "type": "String"
+      }
+    ],
+    "city3d:semantic_surfaces": true,
+    "city3d:textures": true,
+    "city3d:materials": true
+  },
+  "links": [
+    {
+      "href": "railway.city.json",
+      "rel": "city-model",
+      "type": "application/city+json"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "railway.city.json",
+      "title": "3D city model data",
+      "type": "application/city+json",
+      "roles": [
+        "data"
+      ],
+      "file:size": 4522415,
+      "file:checksum": "122060a80c34d50e167556d858c4fe3b4b11b297c3b450c7785db289e90dcc289b4e"
+    }
+  }
+}

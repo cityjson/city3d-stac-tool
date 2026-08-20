@@ -1,0 +1,389 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://cityjson.github.io/stac-city3d/v0.2.0/schema.json",
+    "https://stac-extensions.github.io/projection/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json"
+  ],
+  "id": "all",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          3.13041974943578,
+          47.97526692356033
+        ],
+        [
+          4.457868550613738,
+          47.97526692356033
+        ],
+        [
+          4.457868550613738,
+          52.00908478300988
+        ],
+        [
+          3.13041974943578,
+          52.00908478300988
+        ],
+        [
+          3.13041974943578,
+          47.97526692356033
+        ]
+      ]
+    ]
+  },
+  "bbox": [
+    3.13041974943578,
+    47.97526692356033,
+    -3.704,
+    4.457868550613738,
+    52.00908478300988,
+    52.147
+  ],
+  "properties": {
+    "datetime": null,
+    "city3d:version": "2.0",
+    "city3d:city_objects": 440,
+    "city3d:lods": [
+      "0",
+      "1.2",
+      "1.3",
+      "2.2",
+      "3"
+    ],
+    "city3d:co_types": [
+      "Bridge",
+      "BridgeConstructiveElement",
+      "BridgeInstallation",
+      "Building",
+      "BuildingInstallation",
+      "BuildingPart",
+      "CityFurniture",
+      "CityObjectGroup",
+      "GenericCityObject",
+      "Railway",
+      "SolitaryVegetationObject",
+      "TINRelief",
+      "Tunnel",
+      "TunnelInstallation",
+      "WaterBody"
+    ],
+    "city3d:attributes": [
+      {
+        "name": "b3_bag_bag_overlap",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_bouwlagen",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_dak_type",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "b3_extrusie",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_h_dak_50p",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_h_dak_70p",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_h_dak_max",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_h_dak_min",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_h_maaiveld",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_is_glas_dak",
+        "type": "Boolean",
+        "required": false
+      },
+      {
+        "name": "b3_kas_warenhuis",
+        "type": "Boolean",
+        "required": false
+      },
+      {
+        "name": "b3_mutatie_AHN3_AHN4",
+        "type": "Boolean",
+        "required": false
+      },
+      {
+        "name": "b3_mutatie_AHN4_AHN5",
+        "type": "Boolean",
+        "required": false
+      },
+      {
+        "name": "b3_n_vlakken",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_nodata_fractie_AHN3",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_nodata_fractie_AHN4",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_nodata_fractie_AHN5",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_nodata_radius_AHN3",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_nodata_radius_AHN4",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_nodata_radius_AHN5",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_opp_buitenmuur",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_opp_dak_plat",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_opp_dak_schuin",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_opp_grond",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_opp_scheidingsmuur",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_puntdichtheid_AHN3",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_puntdichtheid_AHN4",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_puntdichtheid_AHN5",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_pw_bron",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "b3_pw_datum",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_pw_onvoldoende",
+        "type": "Boolean",
+        "required": false
+      },
+      {
+        "name": "b3_pw_selectie_reden",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "b3_rmse_lod12",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_rmse_lod13",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_rmse_lod22",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_succes",
+        "type": "Boolean",
+        "required": false
+      },
+      {
+        "name": "b3_t_run",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_val3dity_lod12",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "b3_val3dity_lod13",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "b3_val3dity_lod22",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "b3_volume_lod12",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_volume_lod13",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "b3_volume_lod22",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "begingeldigheid",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "class",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "documentdatum",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "documentnummer",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "fid",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "function",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "geconstateerd",
+        "type": "Boolean",
+        "required": false
+      },
+      {
+        "name": "identificatie",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "oorspronkelijkbouwjaar",
+        "type": "Number",
+        "required": false
+      },
+      {
+        "name": "rf_force_lod11",
+        "type": "Boolean",
+        "required": false
+      },
+      {
+        "name": "species",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "status",
+        "type": "String",
+        "required": false
+      },
+      {
+        "name": "tijdstipregistratie",
+        "type": "Date",
+        "required": false
+      },
+      {
+        "name": "tijdstipregistratielv",
+        "type": "Date",
+        "required": false
+      },
+      {
+        "name": "voorkomenidentificatie",
+        "type": "Number",
+        "required": false
+      }
+    ],
+    "city3d:semantic_surfaces": true,
+    "city3d:textures": false,
+    "city3d:materials": false,
+    "proj:code": "EPSG:7415"
+  },
+  "links": [
+    {
+      "href": "all.fcb",
+      "rel": "city-model",
+      "type": "application/vnd.flatcitybuf"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "all.fcb",
+      "title": "3D city model data",
+      "type": "application/vnd.flatcitybuf",
+      "roles": [
+        "data"
+      ],
+      "file:size": 5179201,
+      "file:checksum": "12203cb3f9b71727481dc9c62f23509a9a9d7e57f7bbd92733a99057421077b082b0"
+    }
+  }
+}

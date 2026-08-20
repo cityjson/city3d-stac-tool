@@ -1,0 +1,305 @@
+{
+  "type": "Feature",
+  "stac_version": "1.1.0",
+  "stac_extensions": [
+    "https://cityjson.github.io/stac-city3d/v0.2.0/schema.json",
+    "https://stac-extensions.github.io/projection/v2.0.0/schema.json",
+    "https://stac-extensions.github.io/file/v2.1.0/schema.json"
+  ],
+  "id": "delft.city",
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          4.366889721271403,
+          52.00406597343231
+        ],
+        [
+          4.375740741402442,
+          52.00406597343231
+        ],
+        [
+          4.375740741402442,
+          52.00908478300988
+        ],
+        [
+          4.366889721271403,
+          52.00908478300988
+        ],
+        [
+          4.366889721271403,
+          52.00406597343231
+        ]
+      ]
+    ]
+  },
+  "bbox": [
+    4.366889721271403,
+    52.00406597343231,
+    -3.704,
+    4.375740741402442,
+    52.00908478300988,
+    52.147
+  ],
+  "properties": {
+    "datetime": null,
+    "city3d:version": "2.0",
+    "city3d:city_objects": 319,
+    "city3d:lods": [
+      "0",
+      "1.2",
+      "1.3",
+      "2.2"
+    ],
+    "city3d:co_types": [
+      "Building",
+      "BuildingPart"
+    ],
+    "city3d:attributes": [
+      {
+        "name": "b3_bag_bag_overlap",
+        "type": "Number"
+      },
+      {
+        "name": "b3_bouwlagen",
+        "type": "Number"
+      },
+      {
+        "name": "b3_dak_type",
+        "type": "String"
+      },
+      {
+        "name": "b3_extrusie",
+        "type": "Number"
+      },
+      {
+        "name": "b3_h_dak_50p",
+        "type": "Number"
+      },
+      {
+        "name": "b3_h_dak_70p",
+        "type": "Number"
+      },
+      {
+        "name": "b3_h_dak_max",
+        "type": "Number"
+      },
+      {
+        "name": "b3_h_dak_min",
+        "type": "Number"
+      },
+      {
+        "name": "b3_h_maaiveld",
+        "type": "Number"
+      },
+      {
+        "name": "b3_is_glas_dak",
+        "type": "Boolean"
+      },
+      {
+        "name": "b3_kas_warenhuis",
+        "type": "Boolean"
+      },
+      {
+        "name": "b3_mutatie_AHN3_AHN4",
+        "type": "Boolean"
+      },
+      {
+        "name": "b3_mutatie_AHN4_AHN5",
+        "type": "Boolean"
+      },
+      {
+        "name": "b3_n_vlakken",
+        "type": "Number"
+      },
+      {
+        "name": "b3_nodata_fractie_AHN3",
+        "type": "Number"
+      },
+      {
+        "name": "b3_nodata_fractie_AHN4",
+        "type": "Number"
+      },
+      {
+        "name": "b3_nodata_fractie_AHN5",
+        "type": "Number"
+      },
+      {
+        "name": "b3_nodata_radius_AHN3",
+        "type": "Number"
+      },
+      {
+        "name": "b3_nodata_radius_AHN4",
+        "type": "Number"
+      },
+      {
+        "name": "b3_nodata_radius_AHN5",
+        "type": "Number"
+      },
+      {
+        "name": "b3_opp_buitenmuur",
+        "type": "Number"
+      },
+      {
+        "name": "b3_opp_dak_plat",
+        "type": "Number"
+      },
+      {
+        "name": "b3_opp_dak_schuin",
+        "type": "Number"
+      },
+      {
+        "name": "b3_opp_grond",
+        "type": "Number"
+      },
+      {
+        "name": "b3_opp_scheidingsmuur",
+        "type": "Number"
+      },
+      {
+        "name": "b3_puntdichtheid_AHN3",
+        "type": "Number"
+      },
+      {
+        "name": "b3_puntdichtheid_AHN4",
+        "type": "Number"
+      },
+      {
+        "name": "b3_puntdichtheid_AHN5",
+        "type": "Number"
+      },
+      {
+        "name": "b3_pw_bron",
+        "type": "String"
+      },
+      {
+        "name": "b3_pw_datum",
+        "type": "Number"
+      },
+      {
+        "name": "b3_pw_onvoldoende",
+        "type": "Boolean"
+      },
+      {
+        "name": "b3_pw_selectie_reden",
+        "type": "String"
+      },
+      {
+        "name": "b3_rmse_lod12",
+        "type": "Number"
+      },
+      {
+        "name": "b3_rmse_lod13",
+        "type": "Number"
+      },
+      {
+        "name": "b3_rmse_lod22",
+        "type": "Number"
+      },
+      {
+        "name": "b3_succes",
+        "type": "Boolean"
+      },
+      {
+        "name": "b3_t_run",
+        "type": "Number"
+      },
+      {
+        "name": "b3_val3dity_lod12",
+        "type": "String"
+      },
+      {
+        "name": "b3_val3dity_lod13",
+        "type": "String"
+      },
+      {
+        "name": "b3_val3dity_lod22",
+        "type": "String"
+      },
+      {
+        "name": "b3_volume_lod12",
+        "type": "Number"
+      },
+      {
+        "name": "b3_volume_lod13",
+        "type": "Number"
+      },
+      {
+        "name": "b3_volume_lod22",
+        "type": "Number"
+      },
+      {
+        "name": "begingeldigheid",
+        "type": "String"
+      },
+      {
+        "name": "documentdatum",
+        "type": "String"
+      },
+      {
+        "name": "documentnummer",
+        "type": "String"
+      },
+      {
+        "name": "fid",
+        "type": "Number"
+      },
+      {
+        "name": "geconstateerd",
+        "type": "Boolean"
+      },
+      {
+        "name": "identificatie",
+        "type": "String"
+      },
+      {
+        "name": "oorspronkelijkbouwjaar",
+        "type": "Number"
+      },
+      {
+        "name": "rf_force_lod11",
+        "type": "Boolean"
+      },
+      {
+        "name": "status",
+        "type": "String"
+      },
+      {
+        "name": "tijdstipregistratie",
+        "type": "String"
+      },
+      {
+        "name": "tijdstipregistratielv",
+        "type": "String"
+      },
+      {
+        "name": "voorkomenidentificatie",
+        "type": "Number"
+      }
+    ],
+    "city3d:semantic_surfaces": true,
+    "city3d:textures": false,
+    "city3d:materials": false,
+    "proj:code": "EPSG:7415"
+  },
+  "links": [
+    {
+      "href": "delft.city.json",
+      "rel": "city-model",
+      "type": "application/city+json"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "delft.city.json",
+      "title": "3D city model data",
+      "type": "application/city+json",
+      "roles": [
+        "data"
+      ],
+      "file:size": 1750888,
+      "file:checksum": "12209cf4662b2370b26065140ca32c4add7a9b6c7f68af5cc9485fb56531ab67c5d8"
+    }
+  }
+}

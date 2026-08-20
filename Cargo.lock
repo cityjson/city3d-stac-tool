@@ -749,13 +749,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "city3d_stac"
+name = "city3d-stac-gen"
 version = "0.3.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
  "bytes",
  "chrono",
+ "city3d-stac-types",
  "cjseq",
  "clap",
  "console",
@@ -776,7 +777,6 @@ dependencies = [
  "parquet 54.3.1",
  "predicates",
  "pretty_assertions",
- "proj4rs",
  "quick-xml",
  "rayon",
  "regex",
@@ -796,6 +796,22 @@ dependencies = [
  "url",
  "walkdir",
  "zip",
+]
+
+[[package]]
+name = "city3d-stac-types"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "hex",
+ "indexmap 2.13.1",
+ "jsonschema 0.26.2",
+ "proj4rs",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
