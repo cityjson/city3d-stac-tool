@@ -210,6 +210,9 @@ fn is_northing_first_projected(epsg: u32) -> bool {
     matches!(
         epsg, // Estonian Coordinate System of 1997 (axis order: northing, easting)
         3301
+            // Japan: JGD2011 / Japan Plane Rectangular CS zones I–XIX
+            // (axis order: northing, easting)
+            | 6669..=6687
     )
 }
 
@@ -434,6 +437,28 @@ mod tests {
         assert_eq!(result.zmin, 35.74);
         assert_eq!(result.zmax, 101.21);
         assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_to_wgs84_from_jgd2011_plane_rectangular_zone_ix() {
+        // EPSG:6677 defines CityGML coordinates as northing, easting. The
+        // point below is in Tokyo and must not be passed to proj4rs as
+        // easting, northing.
+        let bbox = BBox3D::new(
+            -38533.266,
+            -6804.149064,
+            0.0,
+            -38533.266,
+            -6804.149064,
+            10.0,
+        );
+        let crs = CRS::from_epsg(6677);
+        let result = bbox.to_wgs84(&crs).unwrap();
+
+        assert!((result.xmin - 139.758189519).abs() < 0.000001, "{result:?}");
+        assert!((result.ymin - 35.652656953).abs() < 0.000001, "{result:?}");
+        assert_eq!(result.zmin, 0.0);
+        assert_eq!(result.zmax, 10.0);
     }
 
     #[test]
