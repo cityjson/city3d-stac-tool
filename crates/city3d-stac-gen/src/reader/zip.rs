@@ -198,14 +198,12 @@ impl ZipReader {
         let mut has_materials = false;
         let mut has_semantic_surfaces = false;
 
-        // For bbox, we need to merge extents
-        let mut min_x = f64::MAX;
-        let mut min_y = f64::MAX;
-        let mut min_z = f64::MAX;
-        let mut max_x = f64::MIN;
-        let mut max_y = f64::MIN;
-        let mut max_z = f64::MIN;
-        let mut has_bbox = false;
+        // Keep the source CRS with each bbox. ZIP archives can contain files
+        // in more than one CRS (for example, PLATEAU mixes JGD2011 geographic
+        // and Japan Plane Rectangular files). Raw coordinate values from those
+        // files cannot be merged safely.
+        let mut bboxes = Vec::new();
+        let mut bbox_crs_codes = BTreeSet::new();
 
         let mut primary_encoding = "CityJSON";
 
@@ -256,15 +254,12 @@ impl ZipReader {
                 has_semantic_surfaces = true;
             }
 
-            // Merge bbox
+            // Collect bbox and its own CRS. Bboxes are normalized to WGS84
+            // below when the archive contains multiple coordinate systems.
             if let Ok(bbox) = reader.bbox() {
-                has_bbox = true;
-                min_x = min_x.min(bbox.xmin);
-                min_y = min_y.min(bbox.ymin);
-                min_z = min_z.min(bbox.zmin);
-                max_x = max_x.max(bbox.xmax);
-                max_y = max_y.max(bbox.ymax);
-                max_z = max_z.max(bbox.zmax);
+                let bbox_crs = reader.crs().unwrap_or_default();
+                bbox_crs_codes.insert(bbox_crs.epsg);
+                bboxes.push((bbox, bbox_crs));
             }
 
             // Get version and CRS from first reader
@@ -295,11 +290,28 @@ impl ZipReader {
             self.inner_paths.len()
         ));
 
-        let bbox = if has_bbox {
-            Some(BBox3D::new(min_x, min_y, min_z, max_x, max_y, max_z))
-        } else {
-            None
-        };
+        let has_mixed_bbox_crs = bbox_crs_codes.len() > 1;
+        let bbox = bboxes
+            .into_iter()
+            .try_fold(None::<BBox3D>, |merged, (bbox, bbox_crs)| {
+                let bbox = if has_mixed_bbox_crs {
+                    bbox.to_wgs84(&bbox_crs)
+                } else {
+                    Ok(bbox)
+                }?;
+
+                Ok::<Option<BBox3D>, CityJsonStacError>(Some(match merged {
+                    Some(merged) => merged.merge(&bbox),
+                    None => bbox,
+                }))
+            })?;
+
+        // A mixed-CRS archive has no single native CRS. Its aggregate bbox is
+        // WGS84, which also prevents the STAC item builder from reprojecting it
+        // a second time.
+        if has_mixed_bbox_crs {
+            crs = Some(CRS::wgs84());
+        }
 
         let attributes: Vec<_> = attributes_map.into_values().collect();
 
@@ -515,6 +527,43 @@ mod tests {
         temp_zip
     }
 
+    /// Create a ZIP with the same Tokyo area expressed in two JGD2011 CRSs.
+    /// EPSG:6677 is Japan Plane Rectangular CS IX (metres); EPSG:6697 is
+    /// JGD2011 geographic 3D (latitude, longitude, height).
+    fn create_test_zip_with_mixed_citygml_crs() -> NamedTempFile {
+        let temp_zip = NamedTempFile::new().unwrap();
+        let mut zip = zip::ZipWriter::new(temp_zip.as_file());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+
+        let projected = r#"<?xml version="1.0" encoding="UTF-8"?>
+<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0" xmlns:gml="http://www.opengis.net/gml">
+  <gml:boundedBy>
+    <gml:Envelope srsName="EPSG:6677">
+      <gml:lowerCorner>-38533.266 -6804.149064 0</gml:lowerCorner>
+      <gml:upperCorner>-38533.266 -6804.149064 10</gml:upperCorner>
+    </gml:Envelope>
+  </gml:boundedBy>
+</core:CityModel>"#;
+        let geographic = r#"<?xml version="1.0" encoding="UTF-8"?>
+<core:CityModel xmlns:core="http://www.opengis.net/citygml/2.0" xmlns:gml="http://www.opengis.net/gml">
+  <gml:boundedBy>
+    <gml:Envelope srsName="EPSG:6697">
+      <gml:lowerCorner>35.67550198892446 139.84302229648253 0</gml:lowerCorner>
+      <gml:upperCorner>35.67550198892446 139.84302229648253 10</gml:upperCorner>
+    </gml:Envelope>
+  </gml:boundedBy>
+</core:CityModel>"#;
+
+        zip.start_file("projected.gml", options).unwrap();
+        zip.write_all(projected.as_bytes()).unwrap();
+        zip.start_file("geographic.gml", options).unwrap();
+        zip.write_all(geographic.as_bytes()).unwrap();
+        zip.finish().unwrap();
+
+        temp_zip
+    }
+
     #[test]
     fn test_zip_reader_aggregates_metadata() {
         let temp_zip = create_test_zip_with_cityjson();
@@ -547,6 +596,21 @@ mod tests {
 
         // Should have CityJSON encoding
         assert_eq!(reader.encoding(), "CityJSON");
+    }
+
+    #[test]
+    fn test_zip_reader_normalizes_mixed_crs_bboxes_to_wgs84() {
+        let temp_zip = create_test_zip_with_mixed_citygml_crs();
+        let reader = ZipReader::new(temp_zip.path()).unwrap();
+
+        let bbox = reader.bbox().unwrap();
+        assert!((bbox.xmin - 139.758189519).abs() < 0.000001, "{bbox:?}");
+        assert!((bbox.ymin - 35.652656953).abs() < 0.000001, "{bbox:?}");
+        assert!((bbox.xmax - 139.843022296).abs() < 0.000001, "{bbox:?}");
+        assert!((bbox.ymax - 35.675501989).abs() < 0.000001, "{bbox:?}");
+
+        // A mixed archive has no single native CRS; its aggregate bbox is WGS84.
+        assert_eq!(reader.crs().unwrap().to_stac_epsg(), Some(4326));
     }
 
     #[test]
