@@ -332,12 +332,30 @@ city3dstac aggregate <ITEMS>... [OPTIONS]  # alias
 | `-l, --license <LICENSE>`  | Data license (default: `proprietary`)                                      |
 | `--items-base-url <URL>`   | Base URL for item links (makes them absolute URLs)                         |
 | `--items-from-file <FILE>` | Read item paths from a text file (one per line); use past shell arg limits |
+| `--items-dir <DIR>`        | Recursively collect Items from a directory (by content, not filename)      |
 | `--skip-errors`            | Skip items with parsing errors (default: true)                             |
 | `--pretty`                 | Pretty-print JSON output (default: true)                                   |
 | `--geoparquet`             | Also generate a STAC GeoParquet file (`items.parquet`)                     |
 | `--max-item-links <N>`     | Max per-item links in `collection.json` (`0` disables)                     |
 | `-v, --verbose`            | Verbose output                                                             |
 | `--dry-run`                | Validate config/inputs without generating output                           |
+
+**Item links:**
+
+Each item's link href is its path _relative to the directory holding the output
+collection_, so items beside `collection.json` link as `./item1.json` and a
+nested layout links as `./items/<id>/metadata.json`. `--items-base-url` joins
+the same relative path. An item outside the collection's directory has no
+relative path, and falls back to its bare filename.
+
+**Collecting items:**
+
+The positional `<ITEMS>`, `--items-from-file`, and `--items-dir` compose: the
+union of all three is aggregated. `--items-dir` selects by content — any `.json`
+that parses as a STAC Item (`type: "Feature"` with a `stac_version`) — rather
+than by filename, so both CityParquet's `metadata.json` and this tool's own
+`*_item.json` are found. `collection.json` and `catalog.json` are skipped, and
+symlinked directories are not followed.
 
 **Aggregated Metadata:**
 
