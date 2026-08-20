@@ -2491,8 +2491,12 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
         ));
     }
 
-    // Parse all STAC items
-    let mut parsed_items: Vec<crate::stac::StacItem> = Vec::new();
+    // Parse all STAC items, keeping each one paired with the file it came from.
+    // The pairing must be established here: a skipped file (`--skip-errors` is
+    // on by default) makes the input list and the parsed list different
+    // lengths, so matching them up afterwards puts every later item on another
+    // item's path.
+    let mut parsed: Vec<(PathBuf, crate::stac::StacItem)> = Vec::new();
     let mut errors: Vec<(PathBuf, String)> = Vec::new();
 
     let pb = create_progress_bar(config.items.len() as u64, "Parsing STAC items…");
@@ -2505,7 +2509,7 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
         match std::fs::read_to_string(item_path) {
             Ok(content) => match serde_json::from_str::<crate::stac::StacItem>(&content) {
                 Ok(item) => {
-                    parsed_items.push(item);
+                    parsed.push((item_path.clone(), item));
                 }
                 Err(e) => {
                     if config.skip_errors {
@@ -2537,11 +2541,16 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
     }
     pb.finish_and_clear();
 
-    if parsed_items.is_empty() {
+    if parsed.is_empty() {
         return Err(crate::error::CityJsonStacError::StacError(
             "No valid STAC items could be parsed".to_string(),
         ));
     }
+
+    // Split the pairs once, so the paths and the items keep the order they were
+    // paired in. Everything downstream indexes them together.
+    let (item_paths, parsed_items): (Vec<PathBuf>, Vec<crate::stac::StacItem>) =
+        parsed.into_iter().unzip();
 
     // Generate collection ID from first item or output filename
     let collection_id = merged_config.id.unwrap_or_else(|| {
@@ -2673,16 +2682,25 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
     // Add item links
     let max_item_links = config.max_item_links.unwrap_or(usize::MAX);
     let mut omitted_item_links = 0usize;
-    for (idx, (item_path, item)) in config.items.iter().zip(parsed_items.iter()).enumerate() {
+    let collection_dir = config
+        .output
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    for (idx, (item_path, item)) in item_paths.iter().zip(parsed_items.iter()).enumerate() {
         if idx >= max_item_links {
             omitted_item_links += 1;
             continue;
         }
-        let fallback_filename = format!("{}.json", item.id);
-        let item_filename = item_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&fallback_filename);
+        let item_relpath = item_relative_href(item_path, collection_dir).unwrap_or_else(|| {
+            // Outside the collection's own directory there is no relative path
+            // to offer, so the href stays the bare filename it has always been.
+            item_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(str::to_string)
+                .unwrap_or_else(|| format!("{}.json", item.id))
+        });
 
         let href = match &config.items_base_url {
             Some(base) => {
@@ -2692,11 +2710,11 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
                 } else {
                     format!("{base}/")
                 };
-                format!("{normalized_base}{item_filename}")
+                format!("{normalized_base}{item_relpath}")
             }
             None => {
                 // Use relative path from collection to item
-                format!("./{item_filename}")
+                format!("./{item_relpath}")
             }
         };
 
@@ -2785,9 +2803,81 @@ fn handle_update_collection_command(config: UpdateCollectionConfig) -> Result<()
     Ok(())
 }
 
+/// The href of `item_path` as seen from the directory holding the collection.
+///
+/// A flat layout — `*_item.json` files sitting beside `collection.json` —
+/// yields the bare filename it always did. A nested one, which is what
+/// `--items-from-file` is pointed at when the registry lists
+/// `<out>/<id>/items/*.json`, yields `items/<name>` rather than a bare
+/// filename that resolves beside `collection.json` where no such file exists.
+///
+/// Returns `None` when the item lies outside the collection's directory and so
+/// has no relative path to offer; the caller keeps the historical filename.
+/// Separators are normalised to `/`, since the result is a URL path.
+fn item_relative_href(item_path: &Path, collection_dir: &Path) -> Option<String> {
+    let relative = item_path
+        .strip_prefix(collection_dir)
+        .ok()
+        .map(Path::to_path_buf)
+        .or_else(|| {
+            // A lexical strip fails when one side is absolute and the other is
+            // not, or when either carries `.`/`..` components; resolving both
+            // against the filesystem lines them up. Only possible once the
+            // directory exists, hence the fallback rather than the rule.
+            let dir = std::fs::canonicalize(collection_dir).ok()?;
+            let item = std::fs::canonicalize(item_path).ok()?;
+            item.strip_prefix(&dir).ok().map(Path::to_path_buf)
+        })?;
+
+    let href = relative
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/");
+    (!href.is_empty()).then_some(href)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn item_relative_href_is_lexical_when_the_paths_share_a_prefix() {
+        assert_eq!(
+            item_relative_href(Path::new("out/c/items/a_item.json"), Path::new("out/c")),
+            Some("items/a_item.json".to_string())
+        );
+        // A flat layout, with the items beside the collection.
+        assert_eq!(
+            item_relative_href(Path::new("out/c/a_item.json"), Path::new("out/c")),
+            Some("a_item.json".to_string())
+        );
+    }
+
+    #[test]
+    fn item_relative_href_resolves_a_mixed_absolute_and_relative_pair() {
+        // The item list may be absolute while `-o` is relative (or either may
+        // carry `.` components); only the filesystem can line those two up, and
+        // both sides name the same real directory.
+        let tmp = tempfile::tempdir().unwrap();
+        let items = tmp.path().join("items");
+        std::fs::create_dir_all(&items).unwrap();
+        std::fs::write(items.join("a_item.json"), "{}").unwrap();
+        let dotted = tmp.path().join(".").join("items").join("..");
+
+        assert_eq!(
+            item_relative_href(&items.join("a_item.json"), &dotted),
+            Some("items/a_item.json".to_string())
+        );
+    }
+
+    #[test]
+    fn item_relative_href_declines_an_item_outside_the_collection() {
+        assert_eq!(
+            item_relative_href(Path::new("/elsewhere/a_item.json"), Path::new("/out/c")),
+            None
+        );
+    }
 
     #[test]
     fn test_sanitize_folder_name_basic() {
