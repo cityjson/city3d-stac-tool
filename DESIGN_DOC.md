@@ -1,9 +1,10 @@
 # Technical Design Document
 
-This document provides detailed technical architecture and implementation guidelines for the cityjson-stac tool.
+This document provides detailed technical architecture and implementation guidelines for the City3D STAC tool (`city3dstac`).
 
 ## Table of Contents
 
+0. [Workspace Layout](#workspace-layout)
 1. [Architecture Details](#architecture-details)
 2. [Design Philosophy](#design-philosophy)
 3. [Development Standards](#development-standards)
@@ -13,6 +14,43 @@ This document provides detailed technical architecture and implementation guidel
 7. [CLI Specification](#cli-specification)
 8. [Error Handling](#error-handling)
 9. [Testing Strategy](#testing-strategy)
+
+---
+
+## Workspace Layout
+
+The repository is a two-crate Cargo workspace. Both crates are published to
+crates.io and released in lockstep (same semver bump level).
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ city3d-stac-gen  (crates/city3d-stac-gen)                    │
+│   lib `city3d_stac`, bin `city3dstac`                        │
+│   CLI, config, readers (CityJSON, CityJSONSeq, CityGML,      │
+│   FlatCityBuf, ZIP, GZIP), remote access, traversal,         │
+│   StacCollectionBuilder / StacCatalogBuilder, GeoParquet     │
+│   deps: stac, tokio, object_store, reqwest, …                │
+└──────────────────────────────┬───────────────────────────────┘
+                               │ depends on
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│ city3d-stac-types  (crates/city3d-stac-types)                │
+│   StacItemBuilder, City3dProperties, local STAC serde model, │
+│   metadata (BBox3D, CRS, Transform, AttributeDefinition),    │
+│   checksums, extensions::CITY3D_EXTENSION                    │
+│   deps: serde, serde_json, chrono, indexmap, thiserror,      │
+│         sha2, hex, proj4rs — nothing else at runtime         │
+└──────────────────────────────────────────────────────────────┘
+```
+
+`city3d-stac-types` exists so that external writers (e.g. `cityparquet-rs`)
+can emit a STAC Item without inheriting the CLI's reader stack or an async
+runtime. It must never gain a runtime dependency on `stac`, `tokio`,
+`object_store`, or `reqwest`. `city3d_stac::metadata` re-exports
+`city3d_stac_types::metadata`, so both paths resolve to the same types.
+
+The `CityModelMetadataReader` trait lives in `city3d-stac-gen`; the bridge
+from a reader to `City3dProperties` is `city3d_stac::adapter::properties_from_reader`.
 
 ---
 
@@ -28,7 +66,8 @@ This document provides detailed technical architecture and implementation guidel
 ### Core Trait Definition
 
 ```rust
-/// Common interface for all CityJSON-format readers
+/// Common interface for all format readers
+/// (crates/city3d-stac-gen/src/reader/mod.rs)
 pub trait CityModelMetadataReader: Send + Sync {
     /// Extract 3D bounding box [xmin, ymin, zmin, xmax, ymax, zmax]
     fn bbox(&self) -> Result<BBox3D>;
@@ -62,27 +101,36 @@ pub trait CityModelMetadataReader: Send + Sync {
 
     /// Extract additional metadata
     fn metadata(&self) -> Result<Option<serde_json::Value>>;
+
+    /// Get the CityJSON extensions used
+    fn extensions(&self) -> Result<Vec<String>>;
+
+    /// Whether semantic surfaces / textures / materials are present
+    fn semantic_surfaces(&self) -> Result<bool>;
+    fn textures(&self) -> Result<bool>;
+    fn materials(&self) -> Result<bool>;
+
+    /// Whether the format can be processed as a stream (default: false)
+    fn streamable(&self) -> bool { false }
 }
 ```
 
 ### Reader Factory Pattern
 
-```rust
-/// Factory function to create appropriate reader for a file
-pub fn get_reader(file_path: &Path) -> Result<Box<dyn CityModelMetadataReader>> {
-    let extension = file_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .ok_or_else(|| CityJsonStacError::UnsupportedFormat("No extension".into()))?;
+`get_reader(path)` in `crates/city3d-stac-gen/src/reader/mod.rs` picks a
+reader by file extension (`get_reader_from_source` does the same for remote
+inputs):
 
-    match extension.to_lowercase().as_str() {
-        "json" => Ok(Box::new(CityJSONReader::new(file_path)?)),
-        "jsonl" | "cjseq" => Ok(Box::new(CityJSONSeqReader::new(file_path)?)),
-        "fcb" => Ok(Box::new(FlatCityBufReader::new(file_path)?)),
-        _ => Err(CityJsonStacError::UnsupportedFormat(extension.into())),
-    }
-}
-```
+| Extension | Reader |
+| --------- | ------ |
+| `.json` | `CityJSONReader` |
+| `.jsonl` | `CityJSONSeqReader` |
+| `.gml`, `.xml` | `CityGMLReader` (2.0 / 3.0), after checking the content is CityGML |
+| `.fcb` | `FlatCityBufReader` |
+| `.zip` | `ZipReader` (aggregates the supported files inside) |
+| `.gz` | `GzipReader` (wraps the reader for the inner file) |
+
+Any other extension is rejected with an error.
 
 ---
 
@@ -153,7 +201,7 @@ This design allows:
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Key principle**: Readers depend on metadata types, not vice versa. The metadata module has no knowledge of readers or CityJSON formats.
+**Key principle**: Readers depend on metadata types, not vice versa. The metadata module has no knowledge of readers or CityJSON formats. The Metadata module (and the STAC Item builder) live in `city3d-stac-types`; the Reader module and the Collection/Catalog builders live in `city3d-stac-gen`.
 
 ---
 
@@ -175,10 +223,13 @@ When adding new features or modifying existing ones:
 cargo fmt
 
 # Check for lints and warnings
-cargo clippy -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
 
-# Run unit tests
+# Run unit tests (the git hook runs this subset)
 cargo test --lib
+
+# Before committing, run the full suite (both crates)
+cargo test
 ```
 
 **Rules**:
@@ -205,8 +256,8 @@ cargo test --lib
    - Check that error messages are helpful
 
 4. **Organize tests by module**
-   - Unit tests in `src/<module>/tests.rs` or inline `#[cfg(test)]` modules
-   - Integration tests in `tests/` directory
+   - Unit tests in inline `#[cfg(test)]` modules
+   - Integration tests in `crates/<crate>/tests/`
 
 ---
 
@@ -214,7 +265,7 @@ cargo test --lib
 
 ### Test Data Location
 
-Test fixtures are located in `tests/data/`:
+Test fixtures for the CLI and readers are located in `crates/city3d-stac-gen/tests/data/`:
 
 | File | Format | Description | Use Case |
 |------|--------|-------------|----------|
@@ -223,6 +274,15 @@ Test fixtures are located in `tests/data/`:
 | `railway.city.json` | CityJSON | Complex file with geometry and attributes | Full metadata extraction |
 | `railway.city.jsonl` | CityJSONSeq | 39 lines (1 header + 38 features) | Smaller streaming dataset |
 | `all.fcb` | FlatCityBuf | Binary format reference | FCB reader tests |
+| `3dbag_citygml2.gml` | CityGML 2.0 | 3DBAG tile | CityGML 2.0 reader tests |
+| `3dbag_citygml3.gml` | CityGML 3.0 | 3DBAG tile | CityGML 3.0 reader tests |
+| `prefixed_citygml2.gml` | CityGML 2.0 | Non-default namespace prefixes | Namespace handling |
+| `datetime_fixture/` | CityJSON | File with a `referenceDate` | Item datetime tests |
+
+`crates/city3d-stac-gen/tests/golden/` holds the golden outputs pinned by
+`golden_output_tests.rs`. The types crate's own tests (builder, serde, schema
+conformance) live in `crates/city3d-stac-types/tests/` and build their inputs
+inline; the vendored extension schema is in `crates/city3d-stac-types/schemas/`.
 
 ### Using Test Data in Tests
 
@@ -233,7 +293,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn test_data_path(file: &str) -> PathBuf {
-        PathBuf::from("tests/data").join(file)
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data").join(file)
     }
 
     #[test]
@@ -248,7 +308,7 @@ mod tests {
 ### Adding New Test Files
 
 When adding new test data:
-1. Place the file in `tests/data/`
+1. Place the file in `crates/city3d-stac-gen/tests/data/`
 2. Document its purpose in the table above
 3. Add a corresponding test that uses it
 4. Keep test files minimal but representative of real-world data
@@ -333,49 +393,57 @@ pub enum AttributeType {
 
 #### StacItemBuilder
 
-```rust
-pub struct StacItemBuilder {
-    id: String,
-    geometry: Option<Geometry>,
-    bbox: Option<Vec<f64>>,
-    properties: serde_json::Map<String, Value>,
-    assets: serde_json::Map<String, Value>,
-    links: Vec<Link>,
-}
+Lives in `city3d-stac-types` (`city3d_stac_types::stac::StacItemBuilder`,
+re-exported as `city3d_stac::stac::StacItemBuilder`). Abridged:
 
+```rust
 impl StacItemBuilder {
     pub fn new(id: impl Into<String>) -> Self;
     pub fn bbox(self, bbox: BBox3D) -> Self;
-    pub fn geometry(self, geom: Geometry) -> Self;
-    pub fn datetime(self, dt: DateTime<Utc>) -> Self;
+    pub fn geometry(self, geometry: Value) -> Self;
+    pub fn geometry_from_bbox(self) -> Self;
+    pub fn datetime(self, dt: Option<String>) -> Self;
     pub fn title(self, title: impl Into<String>) -> Self;
-    pub fn cityjson_metadata(self, reader: &dyn CityModelMetadataReader) -> Result<Self>;
-    pub fn data_asset(self, href: String, media_type: &str) -> Self;
-    pub fn build(self) -> Result<StacItem>;
+    pub fn description(self, description: impl Into<String>) -> Self;
+    pub fn property(self, key: impl Into<String>, value: Value) -> Self;
+    pub fn city3d(self, props: City3dProperties) -> Result<Self>;
+    pub fn crs(self, crs: &CRS) -> Self;
+    pub fn data_asset(self, /* href, media type, … */) -> Self;
+    pub fn asset(self, key: impl Into<String>, asset: Asset) -> Self;
+    pub fn link(self, link: Link) -> Self;
+    pub fn collection_id(self, id: impl Into<String>) -> Self;
+    pub fn build(self) -> Result<Item>;
 }
 ```
+
+Reader metadata reaches the builder as `City3dProperties`, produced by
+`city3d_stac::adapter::properties_from_reader(&*reader)`.
+`city3d_stac::stac::item_from_file` wires a reader into a builder the way the
+CLI's `item` command does.
 
 #### StacCollectionBuilder
 
-```rust
-pub struct StacCollectionBuilder {
-    id: String,
-    title: Option<String>,
-    description: Option<String>,
-    license: String,
-    extent: Extent,
-    summaries: serde_json::Map<String, Value>,
-    links: Vec<Link>,
-}
+Lives in `city3d-stac-gen` (`city3d_stac::stac::StacCollectionBuilder`)
+because it builds an upstream `stac::Collection`. Abridged:
 
+```rust
 impl StacCollectionBuilder {
     pub fn new(id: impl Into<String>) -> Self;
+    pub fn title(self, title: impl Into<String>) -> Self;
+    pub fn description(self, description: impl Into<String>) -> Self;
+    pub fn license(self, license: impl Into<String>) -> Self;
     pub fn spatial_extent(self, bbox: BBox3D) -> Self;
-    pub fn temporal_extent(self, start: Option<DateTime<Utc>>, end: Option<DateTime<Utc>>) -> Self;
+    pub fn temporal_extent(self, /* start, end */) -> Self;
+    pub fn summary(self, key: impl Into<String>, value: Value) -> Self;
+    pub fn item_link(self, href: impl ToString, title: Option<String>) -> Self;
     pub fn aggregate_cityjson_metadata(self, readers: &[Box<dyn CityModelMetadataReader>]) -> Result<Self>;
-    pub fn build(self) -> Result<StacCollection>;
+    pub fn aggregate_from_items(self, items: &[StacItem]) -> Result<Self>;
+    pub fn build(self) -> Result<stac::Collection>;
 }
 ```
+
+`StacCatalogBuilder` (`stac/catalog.rs`) builds the catalog for the
+`catalog` command.
 
 ---
 
@@ -384,7 +452,7 @@ impl StacCollectionBuilder {
 ### Single File Processing
 
 ```
-User Command: cityjson-stac item building.json
+User Command: city3dstac item building.json
      │
      ▼
 Parse CLI Arguments
@@ -414,7 +482,7 @@ Build STAC Item
      │
      ├── StacItemBuilder::new()
      ├── .bbox(metadata.bbox)
-     ├── .cityjson_metadata(&reader)
+     ├── .city3d(properties_from_reader(&reader))
      ├── .data_asset(path, media_type)
      ├── .build()
      │
@@ -425,7 +493,7 @@ Write Output → building_item.json
 ### Directory Processing
 
 ```
-User Command: cityjson-stac collection ./buildings/
+User Command: city3dstac collection ./buildings/
      │
      ▼
 Directory Traversal (walkdir)
@@ -469,62 +537,21 @@ Output Structure:
 
 ## CLI Specification
 
-### Command: `item`
-
-Generate STAC Item from a single file.
-
-```
-cityjson-stac item <FILE> [OPTIONS]
-
-Arguments:
-  <FILE>                    Input file path (.json, .jsonl, .fcb)
-
-Options:
-  -o, --output <PATH>       Output file path [default: <file>_item.json]
-      --id <ID>             Custom STAC Item ID [default: filename]
-      --title <TITLE>       Item title
-  -d, --description <DESC>  Item description
-      --datetime <ISO8601>  Dataset timestamp [default: now]
-  -c, --collection <ID>     Parent collection ID
-  -l, --license <LICENSE>   Data license [default: proprietary]
-      --pretty              Pretty-print JSON [default: true]
-  -v, --verbose             Verbose output
-```
-
-### Command: `collection`
-
-Generate STAC Collection from a directory.
-
-```
-cityjson-stac collection <DIRECTORY> [OPTIONS]
-
-Arguments:
-  <DIRECTORY>               Directory to scan
-
-Options:
-  -o, --output <PATH>       Output directory [default: ./stac_output]
-      --id <ID>             Collection ID [default: directory name]
-      --title <TITLE>       Collection title
-  -d, --description <DESC>  Collection description
-  -l, --license <LICENSE>   Data license [default: proprietary]
-  -r, --recursive           Scan subdirectories [default: true]
-      --max-depth <N>       Maximum directory depth
-  -e, --extensions <EXT>    File extensions to include [default: all]
-  -p, --parallel            Enable parallel processing
-      --skip-errors         Skip files with errors [default: true]
-      --pretty              Pretty-print JSON [default: true]
-  -v, --verbose             Verbose output
-```
+The binary is `city3dstac` with the commands `item`, `collection`,
+`catalog`, and `update-collection` (alias `aggregate`). The README's
+[CLI Reference](README.md#cli-reference) and `city3dstac <command> --help`
+are the authoritative option lists; they are not duplicated here.
 
 ### Exit Codes
 
-| Code | Meaning                   |
-| ---- | ------------------------- |
-| 0    | Success                   |
-| 1    | File/directory not found  |
-| 2    | Unsupported format        |
-| 3    | Metadata extraction error |
-| 4    | Output write error        |
+| Code | Meaning |
+| ---- | ------- |
+| 0    | Success |
+| 1    | Any error (unsupported format, I/O, metadata extraction, write failure) |
+
+With `--dry-run`, the exit code reports the validation result:
+`0` valid, `1` config error, `2` missing input paths, `3` remote URL
+inaccessible.
 
 ---
 
@@ -532,31 +559,15 @@ Options:
 
 ### Error Types
 
-```rust
-#[derive(Error, Debug)]
-pub enum CityJsonStacError {
-    #[error("Unsupported file format: {0}")]
-    UnsupportedFormat(String),
+Each crate has its own `thiserror` enum:
 
-    #[error("IO error: {0}")]
-    IoError(#[from] std::io::Error),
-
-    #[error("JSON parsing error: {0}")]
-    JsonError(#[from] serde_json::Error),
-
-    #[error("Failed to extract metadata: {0}")]
-    MetadataError(String),
-
-    #[error("Invalid CityJSON structure: {0}")]
-    InvalidCityJson(String),
-
-    #[error("Missing required field: {0}")]
-    MissingField(String),
-
-    #[error("STAC generation error: {0}")]
-    StacError(String),
-}
-```
+- `city3d_stac_types::City3dError` — JSON, metadata, missing-field, STAC,
+  GeoJSON, and reprojection errors raised while building an Item.
+- `city3d_stac::error::CityJsonStacError` — everything the CLI and readers
+  can hit: unsupported format, I/O, JSON, metadata extraction, invalid
+  CityJSON, missing field, STAC generation, invalid URL, GeoJSON, no
+  supported files found, object storage, path, and storage/network errors.
+  `City3dError` converts into it transparently.
 
 ### Error Handling Strategy
 
@@ -588,11 +599,8 @@ pub enum CityJsonStacError {
 
 ### Test Fixtures
 
-Located in `tests/fixtures/`:
-
-- `simple_building.json` - Minimal valid CityJSON
-- `complex_city.json` - Multiple object types, LODs
-- `invalid_*.json` - Error handling tests
+See [Test Data](#test-data). Unit tests build minimal inputs inline;
+integration tests read the files in `crates/city3d-stac-gen/tests/data/`.
 
 ### Coverage Target
 
@@ -604,28 +612,12 @@ Located in `tests/fixtures/`:
 
 ## FlatCityBuf Integration
 
-For `.fcb` file support, use the [FlatCityBuf](https://github.com/cityjson/flatcitybuf) Rust library:
-
-```rust
-// Add to Cargo.toml dependencies:
-// flatcitybuf = { git = "https://github.com/cityjson/flatcitybuf" }
-
-use flatcitybuf::FcbReader;
-
-pub struct FlatCityBufReader {
-    file_path: PathBuf,
-    reader: FcbReader,
-}
-
-impl CityModelMetadataReader for FlatCityBufReader {
-    fn encoding(&self) -> &'static str {
-        "FlatCityBuf"
-    }
-    // ... implement other trait methods using FcbReader API
-}
-```
-
-The FlatCityBuf library provides efficient binary reading with spatial indexing support. See the [repository](https://github.com/cityjson/flatcitybuf) for API documentation.
+`.fcb` files are read by `FlatCityBufReader`
+(`crates/city3d-stac-gen/src/reader/fcb.rs`) using the
+[`fcb_core`](https://github.com/cityjson/flatcitybuf) crate's `FcbReader`.
+Bounding box, CRS, transform and attribute columns come from the FCB header
+(cached on first access); city object counts and types need a pass over the
+features, which is loaded lazily and cached separately.
 
 ---
 

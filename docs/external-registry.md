@@ -1,4 +1,4 @@
-# Using `cityjson-stac` From an External Registry Repo
+# Using `city3dstac` From an External Registry Repo
 
 The generator is designed to be consumed from a separate open-data registry repository.
 
@@ -22,7 +22,7 @@ opendata-registry/
 Add this repository as a submodule:
 
 ```bash
-git submodule add git@github.com:HideBa/city3d-stac-tool.git tools/cityjson-stac
+git submodule add https://github.com/cityjson/city3d-stac-tool.git tools/cityjson-stac
 ```
 
 Alternatively, install a released binary from crates.io instead of vendoring
