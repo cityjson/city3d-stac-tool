@@ -1,10 +1,10 @@
-# CityJSON-STAC Agent Guidelines
+# City3D STAC Agent Guidelines
 
 This document serves as the master reference for AI coding agents working on this project.
 
 ## Project Overview
 
-**cityjson-stac** is a Rust-based CLI tool that generates [STAC (SpatioTemporal Asset Catalog)](https://stacspec.org/) metadata from 3D city model datasets. It bridges the gap between STAC's geospatial metadata standard and CityJSON formats.
+**City3D STAC** (`city3dstac`) is a Rust-based CLI tool that generates [STAC (SpatioTemporal Asset Catalog)](https://stacspec.org/) metadata from 3D city model datasets. It bridges the gap between STAC's geospatial metadata standard and CityJSON formats.
 
 ### Core Problem
 
@@ -16,8 +16,10 @@ STAC is widely adopted for geospatial data but lacks native support for 3D city 
 | --------------------- | --------- | ----------------------------------------------------------------- | ------ |
 | CityJSON              | `.json`   | `serde_json`                                                      | ✅     |
 | CityJSONTextSequences | `.jsonl`  | `serde_json` (streaming)                                          | ✅     |
+| CityGML (2.0 / 3.0)   | `.gml`, `.xml` | `quick-xml`                                                  | ✅     |
 | ZIP Archive           | `.zip`    | `zip` crate (with inner readers)                                  | ✅     |
-| FlatCityBuf           | `.fcb`    | [flatcitybuf](https://github.com/cityjson/flatcitybuf) Rust crate | 🚧     |
+| GZIP                  | `.gz`     | `flate2` (with inner readers)                                     | ✅     |
+| FlatCityBuf           | `.fcb`    | [`fcb_core`](https://github.com/cityjson/flatcitybuf)             | ✅     |
 
 ## High-Level Architecture
 
@@ -91,13 +93,13 @@ When the ZIP contains mixed formats, the encoding is determined by discovery ord
 
 ```bash
 # Local ZIP file
-cityjson-stac item data.zip -o data_item.json
+city3dstac item data.zip -o data_item.json
 
 # Remote ZIP file
-cityjson-stac item https://example.com/data.zip -o data_item.json
+city3dstac item https://example.com/data.zip -o data_item.json
 
 # With base URL
-cityjson-stac item https://example.com/data.zip --base-url https://cdn.example.com -o data_item.json
+city3dstac item https://example.com/data.zip --base-url https://cdn.example.com -o data_item.json
 ```
 
 ## Workspace Layout
@@ -136,43 +138,47 @@ schema moves past the version `CITY3D_EXTENSION` is pinned to, or
 `schema_conformance_tests.rs` fails in the types crate — before it can
 surface as invalid output in a downstream consumer.
 
-The "Project Structure" section below predates the crate split and
-describes a single top-level `src/`; the same modules now live under
-`crates/city3d-stac-gen/src/` (readers, CLI, traversal, collection/catalog
-builders) and `crates/city3d-stac-types/src/` (metadata, STAC
-types/item builder, checksum, extensions).
-
 ## Project Structure
 
 ```
-cityjson-stac/
-├── src/
-│   ├── main.rs              # CLI entry point
-│   ├── lib.rs               # Library exports
-│   ├── error.rs             # Error types
-│   ├── cli/
-│   │   └── mod.rs           # CLI commands (item, collection)
-│   ├── reader/
-│   │   ├── mod.rs           # Reader trait & factory
-│   │   └── cityjson.rs      # CityJSON reader implementation
-│   ├── metadata/
-│   │   ├── mod.rs           # Metadata exports
-│   │   ├── bbox.rs          # 3D bounding box
-│   │   ├── crs.rs           # Coordinate reference system
-│   │   ├── transform.rs     # Coordinate transform
-│   │   └── attributes.rs    # Attribute definitions
-│   ├── stac/
-│   │   ├── mod.rs           # STAC exports
-│   │   ├── models.rs        # STAC data models
-│   │   ├── item.rs          # STAC Item builder
-│   │   └── collection.rs    # STAC Collection builder
-│   └── traversal/
-│       └── mod.rs           # Directory scanning
-├── stac-city3d/             # Official STAC 3D City Models Extension (submodule)
-│   └── json-schema/
-│       └── schema.json     # Extension JSON Schema
+city3d-stac-tool/
+├── Cargo.toml                    # Workspace root (members, shared deps)
+├── crates/
+│   ├── city3d-stac-types/        # Vocabulary crate (published to crates.io)
+│   │   ├── schemas/              # Vendored stac-city3d schema (drift guard)
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   ├── error.rs          # City3dError
+│   │   │   ├── checksum.rs       # SHA-256 multihash (file:checksum)
+│   │   │   ├── extensions.rs     # CITY3D_EXTENSION and other schema URLs
+│   │   │   ├── metadata/         # BBox3D, CRS, Transform, AttributeDefinition
+│   │   │   └── stac/             # StacItemBuilder, City3dProperties,
+│   │   │                         # accumulator, local STAC serde model
+│   │   └── tests/                # Builder, serde, schema conformance tests
+│   └── city3d-stac-gen/          # CLI + readers (lib `city3d_stac`, bin `city3dstac`)
+│       ├── src/
+│       │   ├── main.rs           # CLI entry point
+│       │   ├── lib.rs            # Library exports
+│       │   ├── error.rs          # CityJsonStacError
+│       │   ├── adapter.rs        # Reader → City3dProperties
+│       │   ├── metadata.rs       # Re-export of city3d_stac_types::metadata
+│       │   ├── cli/              # Commands (item, collection, catalog, update-collection)
+│       │   ├── config/           # YAML/TOML config parsing
+│       │   ├── reader/           # Reader trait, factory, CityJSON, CityJSONSeq,
+│       │   │                     # CityGML, FlatCityBuf, ZIP, GZIP readers
+│       │   ├── remote/           # object_store / HTTP access
+│       │   ├── stac/             # Collection/Catalog builders, GeoParquet, interop
+│       │   ├── traversal/        # Directory scanning
+│       │   └── validation/       # Dry-run validation
+│       └── tests/
+│           ├── data/             # Test fixtures
+│           ├── golden/           # Golden outputs (golden_output_tests.rs)
+│           └── *.rs              # Integration / CLI tests
+├── stac-city3d/                  # STAC 3D City Models Extension (submodule)
+├── stac-spec/                    # STAC specification (submodule)
+├── examples/                     # Example collection/catalog configs
 └── docs/
-    └── examples/            # Example STAC outputs
+    └── external-registry.md      # Consumer (registry repo) integration guide
 ```
 
 ## Important References
@@ -185,12 +191,12 @@ cityjson-stac/
 
 ### Related Libraries
 
-- [FlatCityBuf](https://github.com/cityjson/flatcitybuf) - For `.fcb` format support, use the Rust crate under `src/rust`
+- [FlatCityBuf](https://github.com/cityjson/flatcitybuf) - `.fcb` support via the `fcb_core` crate
 - [CityJSON Sequences](https://github.com/cityjson/cjseq) - For `.jsonl` format reference
 
 ### Project Documentation
 
-- [STAC_EXTENSION.md](./STAC_EXTENSION.md) - STAC 3D City Models Extension specification
+- [stac-city3d](https://github.com/cityjson/stac-city3d) - STAC 3D City Models Extension specification (vendored as the `stac-city3d/` submodule)
 - [DESIGN_DOC.md](./DESIGN_DOC.md) - Detailed technical architecture
 
 ## Coding Guidelines
@@ -225,8 +231,8 @@ git commit --no-verify -m "emergency fix"
 
 **Module Dependencies**: Reader → Metadata (not vice versa)
 
-- `CityModelMetadataReader` trait in `src/reader/mod.rs`
-- Metadata types (`BBox3D`, `CRS`, `Transform`, `AttributeDefinition`) in `src/metadata/`
+- `CityModelMetadataReader` trait in `crates/city3d-stac-gen/src/reader/mod.rs`
+- Metadata types (`BBox3D`, `CRS`, `Transform`, `AttributeDefinition`) in `crates/city3d-stac-types/src/metadata/`
 - STAC builders consume metadata from readers
 
 **Never Use**:
@@ -279,14 +285,14 @@ The `update-collection` command (alias: `aggregate`) is useful for Object Storag
 
 - Unit tests in each module
 - Integration tests in `tests/`
-- Test fixtures in `tests/fixtures/`
+- Test fixtures in `crates/city3d-stac-gen/tests/data/`
 - Run with: `cargo test`
 
 ### Adding a New Format Reader
 
-1. Create new file in `src/reader/` (e.g., `fcb.rs`)
+1. Create new file in `crates/city3d-stac-gen/src/reader/` (e.g., `fcb.rs`)
 2. Implement `CityModelMetadataReader` trait
-3. Register in factory at `src/reader/mod.rs`
+3. Register in factory at `crates/city3d-stac-gen/src/reader/mod.rs`
 4. Add file extension matching in `get_reader()`
 
 ## STAC Extension Properties (city3d: prefix)
@@ -310,7 +316,7 @@ The extension also references:
 - [File v2.1.0](https://stac-extensions.github.io/file/v2.1.0/schema.json)
 - [Stats v0.2.0](https://stac-extensions.github.io/stats/v0.2.0/schema.json)
 
-See [STAC_EXTENSION.md](./STAC_EXTENSION.md) for full specification.
+See [stac-city3d](https://github.com/cityjson/stac-city3d) for the full specification.
 
 ## Development Setup
 
@@ -425,22 +431,22 @@ cargo test
 cargo fmt --check && cargo clippy -- -D warnings && cargo test
 
 # Generate STAC Item (relative href)
-cityjson-stac item building.json -o building_item.json
+city3dstac item building.json -o building_item.json
 
 # Generate STAC Item with absolute URL
-cityjson-stac item building.json --base-url https://data.example.com/files -o building_item.json
+city3dstac item building.json --base-url https://data.example.com/files -o building_item.json
 
 # Generate STAC Collection
-cityjson-stac collection ./data/ -o ./stac_output
+city3dstac collection ./data/ -o ./stac_output
 
 # Generate STAC Collection with absolute URLs
-cityjson-stac collection ./data/ -o ./stac_output --base-url https://data.example.com/files
+city3dstac collection ./data/ -o ./stac_output --base-url https://data.example.com/files
 
 # Aggregate STAC Collection from existing items (for Object Storage workflows)
-cityjson-stac update-collection item1.json item2.json item3.json -o collection.json
+city3dstac update-collection item1.json item2.json item3.json -o collection.json
 
 # Aggregate with absolute item URLs
-cityjson-stac update-collection items/*.json --items-base-url https://example.com/stac/items -o collection.json
+city3dstac update-collection items/*.json --items-base-url https://example.com/stac/items -o collection.json
 
 # Debug logging
 RUST_LOG=debug cargo run -- item file.json -o output.json
@@ -460,16 +466,16 @@ Validate configuration and inputs before processing:
 
 ```bash
 # Validate collection config
-cityjson-stac collection --config config.yaml --dry-run
+city3dstac collection --config config.yaml --dry-run
 
 # Validate item input (local or remote)
-cityjson-stac item https://example.com/data.json --dry-run
+city3dstac item https://example.com/data.json --dry-run
 
 # Validate update-collection inputs
-cityjson-stac update-collection items/*.json --dry-run
+city3dstac update-collection items/*.json --dry-run
 
 # Validate catalog configuration
-cityjson-stac catalog --config catalog-config.yaml --dry-run
+city3dstac catalog --config catalog-config.yaml --dry-run
 ```
 
 **Exit codes:**

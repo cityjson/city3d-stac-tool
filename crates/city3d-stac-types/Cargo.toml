@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Types and serialiser for STAC Items describing 3D city models (city3d extension)"
 keywords = ["stac", "cityjson", "3d", "gis", "geospatial"]
 categories = ["science::geo"]
+readme = "README.md"
 
 [dependencies]
 serde.workspace = true

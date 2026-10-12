@@ -1,6 +1,6 @@
 # City 3D STAC
 
-A command-line tool for generating STAC (SpatioTemporal Asset Catalog) metadata from CityJSON datasets.
+A command-line tool and Rust library for generating STAC (SpatioTemporal Asset Catalog) metadata from 3D city model datasets (CityJSON, CityJSONSeq, CityGML, FlatCityBuf).
 
 ## Overview
 
@@ -30,7 +30,15 @@ STAC is the widely-adopted metadata standard for geospatial data, but it lacks n
 
 ## Repository Scope
 
-This repository contains the `cityjson-stac` CLI tool and its supporting Rust library code.
+This repository contains the `city3dstac` CLI tool and its supporting Rust library code,
+organised as a two-crate Cargo workspace:
+
+| Crate | crates.io | Contents |
+| ----- | --------- | -------- |
+| [`city3d-stac-gen`](crates/city3d-stac-gen) | [![crates.io](https://img.shields.io/crates/v/city3d-stac-gen.svg)](https://crates.io/crates/city3d-stac-gen) | The `city3dstac` CLI and its library (`city3d_stac`): format readers (CityJSON, CityJSONSeq, CityGML, FlatCityBuf, ZIP, GZIP), directory traversal, config handling, and the STAC Collection/Catalog builders |
+| [`city3d-stac-types`](crates/city3d-stac-types) | [![crates.io](https://img.shields.io/crates/v/city3d-stac-types.svg)](https://crates.io/crates/city3d-stac-types) | Dependency-light vocabulary crate: `City3dProperties`, `StacItemBuilder`, metadata types (`BBox3D`, `CRS`, …), checksums, and the pinned `city3d` extension URL. For writers that only need to emit a STAC Item, without an async runtime or reader stack |
+
+Both crates are released together with the same semver bump level.
 
 Public dataset registry content such as collection config instances, contribution guidelines,
 and publication workflows should live in a separate consumer repository. That consumer
@@ -44,7 +52,7 @@ See [`docs/external-registry.md`](docs/external-registry.md) for a recommended l
 ### From source
 
 ```bash
-git clone git@github.com:HideBa/city3d-stac-tool.git
+git clone https://github.com/cityjson/city3d-stac-tool.git
 cd city3d-stac-tool
 cargo build --release
 ```
@@ -57,13 +65,17 @@ The binary will be available at `./target/release/city3dstac`.
 cargo install city3d-stac-gen
 ```
 
-Library users who only need to emit a STAC Item can depend on the lightweight
-[`city3d-stac-types`](https://crates.io/crates/city3d-stac-types) crate instead.
+To use it as a library, add `city3d-stac-gen` (imported as `city3d_stac`) or, if
+you only need to emit a STAC Item, the lightweight `city3d-stac-types` crate:
+
+```bash
+cargo add city3d-stac-types
+```
 
 ### With Cargo install from Git
 
 ```bash
-cargo install --git ssh://git@github.com/HideBa/city3d-stac-tool.git --bin city3dstac
+cargo install --git https://github.com/cityjson/city3d-stac-tool.git --bin city3dstac
 ```
 
 ## Quick Start
@@ -439,8 +451,9 @@ When processing a collection with files that have the same stem but different ex
 
 - [AGENTS.md](AGENTS.md) / [CLAUDE.md](CLAUDE.md) - Project overview and coding guidelines for AI agents
 - [DESIGN_DOC.md](DESIGN_DOC.md) - Detailed technical architecture and implementation
-- [STAC_EXTENSION.md](STAC_EXTENSION.md) - CityJSON STAC extension specification
-  - Detailed JSON schema of the STAC extension can be found in [`stac-city3d/json-schema/schema.json`](stac-city3d/json-schema/schema.json).
+- [docs/external-registry.md](docs/external-registry.md) - Using the tool from an external registry repository
+- [stac-city3d](https://github.com/cityjson/stac-city3d) - STAC 3D City Models Extension specification
+  - Its JSON schema is vendored as a submodule at [`stac-city3d/json-schema/schema.json`](stac-city3d/json-schema/schema.json).
 
 ## Project Status
 
@@ -453,7 +466,7 @@ When processing a collection with files that have the same stem but different ex
 - STAC Item and Collection generation
 - Full CLI with `item`, `collection`, `catalog`, and `update-collection` commands
 - TOML and YAML configuration support
-- 135+ unit and integration tests passing
+- Published on crates.io as `city3d-stac-gen` and `city3d-stac-types`
 - Custom CityJSON STAC extension
 
 ## Contributing

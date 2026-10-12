@@ -1,13 +1,20 @@
-//! # CityJSON-STAC
+//! # City3D STAC
 //!
 //! A library for generating STAC (SpatioTemporal Asset Catalog) metadata
-//! from CityJSON datasets.
+//! from 3D city model datasets. It backs the `city3dstac` CLI.
+//!
+//! The STAC Item vocabulary (`StacItemBuilder`, `City3dProperties`,
+//! metadata types) lives in the dependency-light
+//! [`city3d-stac-types`](https://docs.rs/city3d-stac-types) crate and is
+//! re-exported from [`stac`] and [`metadata`].
 //!
 //! ## Supported Formats
 //!
 //! - CityJSON (`.json`)
 //! - CityJSON Sequences (`.jsonl`)
-//! - FlatCityBuf (`.fcb`) - coming soon
+//! - CityGML 2.0 / 3.0 (`.gml`, `.xml`)
+//! - FlatCityBuf (`.fcb`)
+//! - ZIP and GZIP archives containing the above (`.zip`, `.gz`)
 //!
 //! ## Example
 //!
