@@ -2,11 +2,22 @@
 //!
 //! Regenerate deliberately with `UPDATE_GOLDEN=1 cargo test --test golden_output_tests`.
 //! Never regenerate to make a refactor pass — that defeats the point of this file.
+//!
+//! Floating-point values are the one exception to byte-for-byte equality:
+//! reprojection goes through the platform's libm, so the last bits of a
+//! coordinate differ between e.g. macOS and Linux. Floats are compared with a
+//! tiny relative tolerance; structure, key order, strings and integers must
+//! still match exactly.
 
 use city3d_stac::reader::{get_reader, CityModelMetadataReader};
 use city3d_stac::stac::{item_from_file, StacCollectionBuilder};
 use city3d_stac::traversal::find_files_with_patterns;
+use serde_json::Value;
 use std::path::{Path, PathBuf};
+
+/// Relative tolerance for float comparison: far below any meaningful change
+/// (1e-12 of a degree is ~0.1 µm), far above cross-platform libm noise.
+const FLOAT_REL_TOLERANCE: f64 = 1e-12;
 
 fn golden_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden")
@@ -23,10 +34,69 @@ fn assert_golden(name: &str, actual: &str) {
     }
     let expected = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("missing golden file {}: {e}", path.display()));
-    assert_eq!(
-        expected, actual,
-        "generated output for {name} changed; the refactor is not behaviour-preserving"
-    );
+    if expected == actual {
+        return;
+    }
+    let expected_json: Value = serde_json::from_str(&expected).expect("golden file is JSON");
+    let actual_json: Value = serde_json::from_str(actual).expect("generated output is JSON");
+    if let Err(at) = json_close(&expected_json, &actual_json, "$") {
+        assert_eq!(
+            expected, actual,
+            "generated output for {name} changed at {at}; the refactor is not behaviour-preserving"
+        );
+    }
+}
+
+/// Structural JSON equality with float tolerance. Object key order is
+/// significant. Returns the JSON path of the first difference.
+fn json_close(expected: &Value, actual: &Value, at: &str) -> Result<(), String> {
+    match (expected, actual) {
+        (Value::Number(e), Value::Number(a)) => {
+            if e == a {
+                return Ok(());
+            }
+            let both_float = e.is_f64() && a.is_f64();
+            let (e, a) = (e.as_f64().unwrap(), a.as_f64().unwrap());
+            let scale = e.abs().max(a.abs()).max(1.0);
+            if both_float && (e - a).abs() <= FLOAT_REL_TOLERANCE * scale {
+                Ok(())
+            } else {
+                Err(at.to_string())
+            }
+        }
+        (Value::Array(e), Value::Array(a)) => {
+            if e.len() != a.len() {
+                return Err(at.to_string());
+            }
+            e.iter()
+                .zip(a)
+                .enumerate()
+                .try_for_each(|(i, (e, a))| json_close(e, a, &format!("{at}[{i}]")))
+        }
+        (Value::Object(e), Value::Object(a)) => {
+            if !e.keys().eq(a.keys()) {
+                return Err(at.to_string());
+            }
+            e.iter()
+                .zip(a.values())
+                .try_for_each(|((k, e), a)| json_close(e, a, &format!("{at}.{k}")))
+        }
+        (e, a) if e == a => Ok(()),
+        _ => Err(at.to_string()),
+    }
+}
+
+#[test]
+fn json_close_tolerates_only_float_noise() {
+    let golden: Value = serde_json::from_str(r#"{"a": [4.366889721271404, 1], "b": "x"}"#).unwrap();
+    let noise: Value = serde_json::from_str(r#"{"a": [4.366889721271403, 1], "b": "x"}"#).unwrap();
+    let moved: Value = serde_json::from_str(r#"{"a": [4.3668897213, 1], "b": "x"}"#).unwrap();
+    let int: Value = serde_json::from_str(r#"{"a": [4.366889721271404, 2], "b": "x"}"#).unwrap();
+    let order: Value = serde_json::from_str(r#"{"b": "x", "a": [4.366889721271404, 1]}"#).unwrap();
+    assert!(json_close(&golden, &noise, "$").is_ok());
+    assert_eq!(json_close(&golden, &moved, "$"), Err("$.a[0]".into()));
+    assert_eq!(json_close(&golden, &int, "$"), Err("$.a[1]".into()));
+    assert_eq!(json_close(&golden, &order, "$"), Err("$".into()));
 }
 
 /// Build an item from a fixture exactly the way the CLI's `item` command does,
