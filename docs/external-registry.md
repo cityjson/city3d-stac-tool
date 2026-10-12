@@ -25,6 +25,10 @@ Add this repository as a submodule:
 git submodule add git@github.com:HideBa/city3d-stac-tool.git tools/cityjson-stac
 ```
 
+Alternatively, install a released binary from crates.io instead of vendoring
+the source (`cargo install city3d-stac-gen`, which provides `city3dstac`), and
+pin the version for reproducible CI.
+
 Validate collection configs in CI:
 
 ```bash

@@ -1,0 +1,157 @@
+name: Publish to crates.io
+
+# Bumps both crates by the chosen semver level, commits and tags the bump on
+# main, then publishes city3d-stac-types and city3d-stac-gen to crates.io.
+# On success, release.yml is triggered (via `workflow_run`) to build the
+# binaries and create the GitHub Release for the new tag.
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: 'Semver level to bump'
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+# Only one publish/release may run at a time.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Bump the version, verify the packages, commit, tag, and push to main.
+  bump:
+    name: Bump version & tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-edit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-edit
+
+      - name: Run tests
+        run: cargo test --workspace --all-features --locked
+
+      - name: Bump version
+        id: bump
+        env:
+          LEVEL: ${{ inputs.level }}
+        run: |
+          set -euo pipefail
+          # Both crates release in lockstep: every release bumps
+          # city3d-stac-types by the same semver level as city3d-stac-gen.
+          # `cargo set-version --bump` (cargo-edit) also rewrites the
+          # `version` requirement on the workspace-level city3d-stac-types
+          # dependency (root Cargo.toml) and Cargo.lock to match — required
+          # because `cargo package` refuses to publish a path dependency
+          # that has no matching version requirement.
+          cargo set-version --bump "$LEVEL" -p city3d-stac-types
+          cargo set-version --bump "$LEVEL" -p city3d-stac-gen
+
+          VERSION=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name == "city3d-stac-gen") | .version')
+          TYPES_VERSION=$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name == "city3d-stac-types") | .version')
+          TAG="v${VERSION}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null; then
+            echo "::error::Tag ${TAG} already exists on origin"
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Bumped city3d-stac-gen to ${VERSION}, city3d-stac-types to ${TYPES_VERSION}"
+
+      - name: Commit and tag
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock crates/city3d-stac-types/Cargo.toml crates/city3d-stac-gen/Cargo.toml
+          git commit -m "chore: release ${TAG}"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+
+      # Package and verify both crates before anything is pushed, so a
+      # packaging failure leaves main and the tags untouched. `--workspace`
+      # resolves the not-yet-published city3d-stac-types from a local
+      # overlay registry when verifying city3d-stac-gen.
+      - name: Verify packages
+        run: cargo publish --workspace --locked --dry-run
+
+      - name: Push commit and tag
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: git push --atomic origin HEAD:main "refs/tags/${TAG}"
+
+  # Publish from the pushed tag. Kept as a separate job so that a failed
+  # upload can be retried with "Re-run failed jobs" without bumping again.
+  publish:
+    name: Publish to crates.io
+    needs: bump
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # city3d-stac-types must be published first: city3d-stac-gen depends
+      # on it, and cargo waits for each upload to appear in the index before
+      # returning. Versions already on crates.io are skipped so a re-run
+      # after a partial failure only uploads what is missing.
+      - name: Publish crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          for crate in city3d-stac-types city3d-stac-gen; do
+            version=$(cargo metadata --format-version 1 --no-deps \
+              | jq -r --arg c "$crate" '.packages[] | select(.name == $c) | .version')
+            status=$(curl -s -o /dev/null -w '%{http_code}' \
+              -A "city3d-stac-tool release (github.com/${GITHUB_REPOSITORY})" \
+              "https://crates.io/api/v1/crates/${crate}/${version}")
+            if [ "$status" = "200" ]; then
+              echo "${crate} ${version} is already on crates.io, skipping"
+              continue
+            fi
+            cargo publish --locked -p "$crate"
+          done
+
+      # release.yml reads this to learn which tag to release, since the
+      # workflow_run event only carries the pre-bump commit SHA.
+      - name: Record release tag
+        run: echo "${{ needs.bump.outputs.tag }}" > release-tag.txt
+
+      - name: Upload release tag
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tag
+          path: release-tag.txt

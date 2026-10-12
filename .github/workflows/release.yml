@@ -1,19 +1,21 @@
 name: Release
 
+# Builds the city3dstac binaries and creates the GitHub Release for the tag
+# produced by publish.yml. Runs automatically once "Publish to crates.io"
+# completes successfully; can also be run manually for an existing tag.
+#
+# Note: `workflow_run` only fires for workflow files on the default branch.
 on:
+  workflow_run:
+    workflows: ["Publish to crates.io"]
+    types: [completed]
   workflow_dispatch:
     inputs:
-      level:
-        description: 'Semver level to bump'
+      tag:
+        description: 'Existing tag to release (e.g. v0.4.0)'
         required: true
-        type: choice
-        default: patch
-        options:
-          - patch
-          - minor
-          - major
+        type: string
 
-# Only one release may run at a time.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -22,70 +24,59 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Bump the version, commit, tag, and push to main.
-  prepare:
-    name: Bump version & tag
+  # Work out which tag to release.
+  resolve:
+    name: Resolve release tag
+    # `workflow_run` matches on workflow name only, so also require that the
+    # triggering run was a manual dispatch in this repository (not, e.g., a
+    # same-named workflow from a fork PR) before trusting its artifact.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'workflow_dispatch' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
     outputs:
-      version: ${{ steps.bump.outputs.version }}
-      tag: ${{ steps.bump.outputs.tag }}
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Download release tag from publish run
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
         with:
-          ref: main
-          # PAT with contents:write that can push to protected main.
-          token: ${{ secrets.GA_TOKEN }}
+          name: release-tag
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-edit
-        run: cargo install cargo-edit --locked
-
-      - name: Bump version
-        id: bump
+      - name: Resolve tag
+        id: tag
         env:
-          LEVEL: ${{ inputs.level }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          # Both crates release in lockstep: every release bumps
-          # city3d-stac-types by the same semver level as city3d-stac-gen.
-          # `cargo set-version --bump` (cargo-edit) also rewrites the
-          # `version` requirement on the workspace-level city3d-stac-types
-          # dependency (root Cargo.toml) to match the newly bumped types
-          # version — required because `cargo package` refuses to publish a
-          # path dependency that has no version requirement.
-          cargo set-version --bump "$LEVEL" -p city3d-stac-gen
-          cargo set-version --bump "$LEVEL" -p city3d-stac-types
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            TAG=$(tr -d '[:space:]' < release-tag.txt)
+          else
+            TAG="${INPUT_TAG}"
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid release tag '${TAG}'"
+            exit 1
+          fi
+          if ! git ls-remote --exit-code --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}" >/dev/null; then
+            echo "::error::Tag ${TAG} does not exist in ${GITHUB_REPOSITORY}"
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${TAG}"
 
-          # Regenerate Cargo.lock to match the manifest changes above.
-          cargo check --workspace
-
-          VERSION=$(cargo metadata --format-version 1 --no-deps \
-            | jq -r '.packages[] | select(.name == "city3d-stac-gen") | .version')
-          TYPES_VERSION=$(cargo metadata --format-version 1 --no-deps \
-            | jq -r '.packages[] | select(.name == "city3d-stac-types") | .version')
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Bumped city3d-stac-gen to ${VERSION}, city3d-stac-types to ${TYPES_VERSION}"
-
-      - name: Commit, tag and push
-        env:
-          TAG: ${{ steps.bump.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock crates/city3d-stac-types/Cargo.toml crates/city3d-stac-gen/Cargo.toml
-          git commit -m "chore: release ${TAG}"
-          git tag -a "${TAG}" -m "Release ${TAG}"
-          git push origin main
-          git push origin "${TAG}"
-
-  # Build release binaries for all platforms at the new tag.
+  # Build release binaries for all platforms at the tag.
   build-release:
     name: Build Release (${{ matrix.target }})
-    needs: prepare
+    needs: resolve
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -113,7 +104,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.prepare.outputs.tag }}
+          ref: ${{ needs.resolve.outputs.tag }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -143,38 +134,10 @@ jobs:
           name: ${{ matrix.asset_name }}
           path: dist/${{ matrix.asset_name }}
 
-  # Publish to crates.io before creating the GitHub release.
-  publish-crate:
-    name: Publish to crates.io
-    needs: prepare
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.tag }}
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      # city3d-stac-gen depends on city3d-stac-types with both a `path` and
-      # a `version` requirement (see root Cargo.toml). crates.io requires
-      # the dependency to already exist there before a crate that depends
-      # on it can be published, so types must publish first. A short wait
-      # after publishing types gives crates.io's index time to catch up
-      # before gen's publish tries to resolve it.
-      - name: Publish city3d-stac-types
-        run: cargo publish --locked -p city3d-stac-types --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-      - name: Wait for crates.io index
-        run: sleep 30
-
-      - name: Publish city3d-stac-gen
-        run: cargo publish --locked -p city3d-stac-gen --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-  # Create the GitHub Release only after crates.io publish and builds succeed.
+  # Create the GitHub Release once all binaries are built.
   create-release:
     name: Create GitHub Release
-    needs: [prepare, build-release, publish-crate]
+    needs: [resolve, build-release]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -183,6 +146,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: city3dstac-*
 
       - name: Create checksums
         run: |
@@ -198,10 +162,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.prepare.outputs.tag }}
-          name: ${{ needs.prepare.outputs.tag }}
+          tag_name: ${{ needs.resolve.outputs.tag }}
+          name: ${{ needs.resolve.outputs.tag }}
           draft: false
-          prerelease: ${{ contains(needs.prepare.outputs.version, 'alpha') || contains(needs.prepare.outputs.version, 'beta') || contains(needs.prepare.outputs.version, 'rc') }}
+          prerelease: ${{ contains(needs.resolve.outputs.version, 'alpha') || contains(needs.resolve.outputs.version, 'beta') || contains(needs.resolve.outputs.version, 'rc') }}
           generate_release_notes: true
           files: |
             artifacts/city3dstac-linux-amd64/*
