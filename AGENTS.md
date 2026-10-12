@@ -168,7 +168,7 @@ cityjson-stac/
 │   │   └── collection.rs    # STAC Collection builder
 │   └── traversal/
 │       └── mod.rs           # Directory scanning
-├── stac-cityjson-extension/  # Official STAC 3D City Models Extension (submodule)
+├── stac-city3d/             # Official STAC 3D City Models Extension (submodule)
 │   └── json-schema/
 │       └── schema.json     # Extension JSON Schema
 └── docs/
@@ -368,10 +368,11 @@ git config --unset core.hooksPath
 
 ### GitHub Actions Workflows
 
-| Workflow      | Trigger             | Description                                               |
-| ------------- | ------------------- | --------------------------------------------------------- |
-| `ci.yml`      | Push to main, PRs   | Runs check, format, clippy, test, docs, security audit    |
-| `release.yml` | Version tags (`v*`) | Builds binaries for all platforms, creates GitHub Release |
+| Workflow      | Trigger                                        | Description                                                                 |
+| ------------- | ---------------------------------------------- | --------------------------------------------------------------------------- |
+| `ci.yml`      | Push to main, PRs                              | Runs check, format, clippy, test, docs, security audit                      |
+| `publish.yml` | Manual dispatch (patch / minor / major)         | Bumps both crates, tags `vX.Y.Z` on main, publishes both crates to crates.io |
+| `release.yml` | `publish.yml` succeeded (or manual with a tag) | Builds binaries for all platforms, creates GitHub Release                    |
 
 ### CI Jobs
 
@@ -387,15 +388,22 @@ git config --unset core.hooksPath
 
 ### Creating a Release
 
-```bash
-# Create and push a version tag
-git tag v0.1.0
-git push origin v0.1.0
+Run the **Publish to crates.io** workflow from the Actions tab (or
+`gh workflow run publish.yml -f level=patch|minor|major`). It:
 
-# This triggers the release workflow which:
-# - Builds binaries for Linux, macOS, Windows (AMD64 + ARM64)
-# - Creates a GitHub Release with all artifacts and checksums
-```
+1. Runs the test suite on `main`
+2. Bumps `city3d-stac-types` and `city3d-stac-gen` by the same semver level
+   (`cargo set-version`), including the workspace dependency requirement
+3. Verifies both packages (`cargo publish --workspace --dry-run`)
+4. Pushes a `chore: release vX.Y.Z` commit and the `vX.Y.Z` tag to `main`
+5. Publishes `city3d-stac-types`, then `city3d-stac-gen` (uses the
+   `CARGO_REGISTRY_TOKEN` organisation secret; already-published versions
+   are skipped, so "Re-run failed jobs" is safe)
+
+When it succeeds, **Release** (`release.yml`) starts automatically, builds
+binaries for Linux, macOS, Windows (AMD64 + ARM64) at the tag, and creates a
+GitHub Release with all artifacts and checksums. To re-create a release for
+an existing tag, run it manually: `gh workflow run release.yml -f tag=vX.Y.Z`.
 
 ### Dependabot
 

@@ -51,7 +51,16 @@ cargo build --release
 
 The binary will be available at `./target/release/city3dstac`.
 
-### With Cargo install
+### From crates.io
+
+```bash
+cargo install city3d-stac-gen
+```
+
+Library users who only need to emit a STAC Item can depend on the lightweight
+[`city3d-stac-types`](https://crates.io/crates/city3d-stac-types) crate instead.
+
+### With Cargo install from Git
 
 ```bash
 cargo install --git ssh://git@github.com/HideBa/city3d-stac-tool.git --bin city3dstac
@@ -431,7 +440,7 @@ When processing a collection with files that have the same stem but different ex
 - [AGENTS.md](AGENTS.md) / [CLAUDE.md](CLAUDE.md) - Project overview and coding guidelines for AI agents
 - [DESIGN_DOC.md](DESIGN_DOC.md) - Detailed technical architecture and implementation
 - [STAC_EXTENSION.md](STAC_EXTENSION.md) - CityJSON STAC extension specification
-  - Detailed JSON schema of the STAC extension can be found in [`stac-cityjson-extension/json-schema/schema.json`](stac-cityjson-extension/json-schema/schema.json).
+  - Detailed JSON schema of the STAC extension can be found in [`stac-city3d/json-schema/schema.json`](stac-city3d/json-schema/schema.json).
 
 ## Project Status
 

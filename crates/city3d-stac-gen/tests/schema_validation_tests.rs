@@ -3,7 +3,7 @@
 //! These tests generate STAC Items and Collections from real CityJSON test data,
 //! then validate the JSON output against:
 //! 1. Core STAC Item/Collection JSON Schemas (self-contained, based on STAC v1.0.0)
-//! 2. STAC 3D City Models Extension JSON Schema (based on stac-cityjson-extension)
+//! 2. STAC 3D City Models Extension JSON Schema (based on stac-city3d)
 //!
 //! This ensures generated output is fully schema-compliant.
 
